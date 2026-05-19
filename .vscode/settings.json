@@ -1,0 +1,11 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "eslint.validate": ["javascript", "typescript"],
+  "eslint.format.enable": true,
+  "files.exclude": {
+    "node_modules": false,
+    "dist": false
+  },
+  "editor.codeActionsOnSave": ["source.organizeImports", "source.fixAll.eslint"]
+}

@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 
 export async function collectEnabledCaptureEvents(
   settings: CaptureSettings,
-  recentEvents: CaptureEvent[]
+  captureAssetsDir: string
 ): Promise<CaptureEvent[]> {
   if (settings.capturePaused) {
     return [];
@@ -22,14 +22,14 @@ export async function collectEnabledCaptureEvents(
 
   if (settings.clipboardEnabled) {
     const clipboardEvent = collectClipboardEvent();
-    if (clipboardEvent && !isDuplicate(clipboardEvent, recentEvents)) {
+    if (clipboardEvent) {
       events.push(clipboardEvent);
     }
   }
 
   if (settings.activeWindowEnabled) {
-    const windowEvent = await collectWindowSourceEvent();
-    if (windowEvent && !isDuplicate(windowEvent, recentEvents)) {
+    const windowEvent = await collectWindowSourceEvent(captureAssetsDir);
+    if (windowEvent) {
       events.push(windowEvent);
     }
   }
@@ -125,7 +125,7 @@ function collectClipboardEvent(): CaptureEvent | null {
   );
 }
 
-async function collectWindowSourceEvent(): Promise<CaptureEvent | null> {
+async function collectWindowSourceEvent(captureAssetsDir: string): Promise<CaptureEvent | null> {
   const activeWindow = await getActiveWindowViaAppleScript();
   if (activeWindow) {
     const appName = activeWindow.appName;
@@ -155,12 +155,19 @@ async function collectWindowSourceEvent(): Promise<CaptureEvent | null> {
       content = `Frontmost app is ${appName}. Content was redacted due to high sensitivity.`;
     }
 
+    const screenshotPath = await captureWindowPreview({
+      appName,
+      windowTitle,
+      captureAssetsDir
+    });
+
     return createEvent("active_window", content, sensitivity, {
       appName,
       windowTitle,
       url: activeWindow.url,
       tabTitle: activeWindow.tabTitle,
-      uiText: sensitivity === "high" ? undefined : activeWindow.uiText
+      uiText: sensitivity === "high" ? undefined : activeWindow.uiText,
+      screenshotPath
     });
   }
 
@@ -213,6 +220,33 @@ async function collectScreenSourceEvent(captureAssetsDir: string): Promise<Captu
   });
 }
 
+async function captureWindowPreview({
+  appName,
+  windowTitle,
+  captureAssetsDir
+}: {
+  appName: string;
+  windowTitle?: string;
+  captureAssetsDir: string;
+}): Promise<string | undefined> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["window"],
+      thumbnailSize: { width: 1440, height: 900 },
+      fetchWindowIcons: false
+    });
+
+    const preferredSource = chooseWindowSource(sources, appName, windowTitle);
+    if (!preferredSource || preferredSource.thumbnail.isEmpty()) {
+      return undefined;
+    }
+
+    return saveWindowPreview(preferredSource.thumbnail.toPNG(), captureAssetsDir);
+  } catch {
+    return undefined;
+  }
+}
+
 function createEvent(
   source: CaptureEvent["source"],
   content: string,
@@ -229,10 +263,6 @@ function createEvent(
   };
 }
 
-function isDuplicate(event: CaptureEvent, recentEvents: CaptureEvent[]) {
-  return recentEvents.some((recentEvent) => recentEvent.source === event.source && recentEvent.content === event.content);
-}
-
 function getMediaStatus(mediaType: "screen" | "microphone"): PermissionState {
   return systemPreferences.getMediaAccessStatus(mediaType);
 }
@@ -242,6 +272,47 @@ async function saveScreenshotPreview(bytes: Buffer, captureAssetsDir: string) {
   const filePath = path.join(captureAssetsDir, `screen-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
   await fs.writeFile(filePath, bytes);
   return filePath;
+}
+
+async function saveWindowPreview(bytes: Buffer, captureAssetsDir: string) {
+  await fs.mkdir(captureAssetsDir, { recursive: true });
+  const filePath = path.join(captureAssetsDir, `window-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+  await fs.writeFile(filePath, bytes);
+  return filePath;
+}
+
+function chooseWindowSource(
+  sources: Electron.DesktopCapturerSource[],
+  appName: string,
+  windowTitle?: string
+) {
+  const normalizedWindowTitle = normalizeWindowMatch(windowTitle);
+  const normalizedAppName = normalizeWindowMatch(appName);
+
+  if (normalizedWindowTitle) {
+    const exactTitleMatch = sources.find((source) => normalizeWindowMatch(source.name) === normalizedWindowTitle);
+    if (exactTitleMatch) {
+      return exactTitleMatch;
+    }
+
+    const partialTitleMatch = sources.find((source) => {
+      const sourceName = normalizeWindowMatch(source.name);
+      return sourceName.includes(normalizedWindowTitle) || normalizedWindowTitle.includes(sourceName);
+    });
+    if (partialTitleMatch) {
+      return partialTitleMatch;
+    }
+  }
+
+  if (normalizedAppName) {
+    return sources.find((source) => normalizeWindowMatch(source.name).includes(normalizedAppName));
+  }
+
+  return undefined;
+}
+
+function normalizeWindowMatch(value?: string) {
+  return (value ?? "").trim().toLowerCase();
 }
 
 async function getAccessibilityStatus(): Promise<PermissionState> {

@@ -645,10 +645,57 @@ function MetadataView({ event }: { event: CaptureEvent }) {
       {metadata.screenshotPath ? (
         <>
           <dt>Screenshot</dt>
-          <dd>{metadata.screenshotPath}</dd>
+          <dd className="metadata-screenshot">
+            <ImageAssetPreview imagePath={metadata.screenshotPath} source={event.source} />
+          </dd>
         </>
       ) : null}
     </dl>
+  );
+}
+
+function ImageAssetPreview({ imagePath, source }: { imagePath: string; source: CaptureEvent["source"] }) {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    setImageSrc(null);
+    setLoadError(null);
+
+    window.mnemonic
+      .readImageAsset(imagePath)
+      .then((src) => {
+        if (active) {
+          setImageSrc(src);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setLoadError(error instanceof Error ? error.message : "Preview unavailable");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [imagePath]);
+
+  return (
+    <>
+      <button
+        className="link-button"
+        type="button"
+        onClick={() => {
+          void window.mnemonic.openImageAsset(imagePath);
+        }}
+      >
+        Open captured preview
+      </button>
+      {imageSrc ? <img alt={`Captured preview for ${source}`} src={imageSrc} /> : null}
+      {loadError ? <small className="error-text">{loadError}</small> : null}
+    </>
   );
 }
 

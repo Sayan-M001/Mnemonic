@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, nativeImage, Tray, Menu } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs/promises";
 import { LocalJsonQuizRepository } from "./quizRepository.js";
 import { QuizDaemon } from "./quizDaemon.js";
 import {
@@ -103,6 +104,14 @@ ipcMain.handle("permissions:request-screen", () => requestScreenPermission());
 ipcMain.handle("permissions:request-microphone", () => requestMicrophonePermission());
 ipcMain.handle("permissions:request-accessibility", () => requestAccessibilityPermission());
 ipcMain.handle("permissions:open-screen-settings", () => openScreenRecordingSettings());
+ipcMain.handle("asset:read-image", async (_event, imagePath: string) => {
+  const bytes = await fs.readFile(imagePath);
+  return `data:image/png;base64,${bytes.toString("base64")}`;
+});
+ipcMain.handle("asset:open-image", async (_event, imagePath: string) => {
+  const { shell } = await import("electron");
+  return shell.openPath(imagePath);
+});
 
 app.whenReady().then(async () => {
   createTray();

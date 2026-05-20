@@ -209,6 +209,30 @@ textarea {
   font-size: 1.05rem;
 }
 
+.metadata-screenshot {
+  display: grid;
+  gap: 8px;
+}
+
+.link-button {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #39706f;
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.metadata-screenshot img {
+  width: min(100%, 280px);
+  border: 1px solid rgba(28, 23, 18, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
 .onboarding-stage .permission-list {
   width: min(560px, 100%);
   text-align: left;

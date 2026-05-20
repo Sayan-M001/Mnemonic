@@ -36,7 +36,8 @@ export class LocalJsonQuizRepository implements QuizRepository {
 
   async addEvent(event: CaptureEvent) {
     const store = await this.readStore();
-    store.events = [event, ...this.filterRetainedEvents(store.events, store.settings.retentionDays)].slice(0, 5000);
+    const retainedEvents = this.filterRetainedEvents(store.events, store.settings.retentionDays);
+    store.events = [event, ...retainedEvents].slice(0, 5000);
     await this.writeStore(store);
   }
 

@@ -13,6 +13,8 @@ const api = {
   requestAccessibilityPermission: () =>
     ipcRenderer.invoke("permissions:request-accessibility") as Promise<PermissionSnapshot>,
   openScreenRecordingSettings: () => ipcRenderer.invoke("permissions:open-screen-settings") as Promise<void>,
+  readImageAsset: (imagePath: string) => ipcRenderer.invoke("asset:read-image", imagePath) as Promise<string>,
+  openImageAsset: (imagePath: string) => ipcRenderer.invoke("asset:open-image", imagePath) as Promise<string>,
   onSnapshotUpdated: (callback: (snapshot: DebugSnapshot) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: DebugSnapshot) => callback(snapshot);
     ipcRenderer.on("debug:snapshot-updated", listener);

@@ -12,7 +12,7 @@ export function generateQuizAttempt(events: CaptureEvent[]): QuizAttempt {
       id: randomUUID(),
       status: "blocked",
       createdAt,
-      reason: `Need at least ${MIN_USEFUL_EVENTS} low-risk context snippets; only found ${usefulEvents.length}.`,
+      reason: `Need at least ${MIN_USEFUL_EVENTS} low-risk saved context notes; only found ${usefulEvents.length}.`,
       sourceEvents: usefulEvents,
       questions: []
     };
@@ -29,7 +29,7 @@ export function generateQuizAttempt(events: CaptureEvent[]): QuizAttempt {
     id: randomUUID(),
     status: "quiz_ready",
     createdAt,
-    reason: "Enough recent, low-sensitivity context exists to generate a small POC quiz.",
+    reason: "Enough recent, low-sensitivity user-provided context exists to generate a small POC quiz.",
     sourceEvents: usefulEvents.slice(0, 5),
     questions
   };
@@ -45,8 +45,8 @@ function buildQuestion(content: string, index: number) {
   }
 
   if (content.toLowerCase().includes("electron")) {
-    return "Which desktop stack are we using for the first quiz daemon POC?";
+    return "Which desktop stack is powering the quiz daemon?";
   }
 
-  return `What is key personal-context fact #${index + 1} from the latest capture window?`;
+  return `What is key personal-context fact #${index + 1} from the saved notes?`;
 }

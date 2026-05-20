@@ -636,6 +636,23 @@ function MetadataView({ event }: { event: CaptureEvent }) {
           </dd>
         </>
       ) : null}
+      {metadata.ocrText ? (
+        <>
+          <dt>OCR Text</dt>
+          <dd style={{ display: "grid", gap: "6px" }}>
+            <div style={{ maxHeight: "140px", overflowY: "auto", whiteSpace: "pre-wrap", background: "rgba(57, 112, 111, 0.08)", padding: "6px", borderRadius: "6px", fontSize: "0.78rem" }}>
+              {metadata.ocrText}
+            </div>
+            {metadata.ocrAverageConfidence !== undefined || metadata.ocrImageSize ? (
+              <small className="muted">
+                {metadata.ocrAverageConfidence !== undefined ? `Confidence ${Math.round(metadata.ocrAverageConfidence * 100)}%` : null}
+                {metadata.ocrAverageConfidence !== undefined && metadata.ocrImageSize ? " • " : null}
+                {metadata.ocrImageSize ? `${metadata.ocrImageSize.width}x${metadata.ocrImageSize.height}` : null}
+              </small>
+            ) : null}
+          </dd>
+        </>
+      ) : null}
       {metadata.displayName ? (
         <>
           <dt>Display</dt>

@@ -8,6 +8,13 @@ export type CaptureEvent = {
     appName?: string;
     windowTitle?: string;
     screenshotPath?: string;
+    ocrText?: string;
+    ocrBlocks?: OCRTextBlock[];
+    ocrAverageConfidence?: number;
+    ocrImageSize?: {
+      width: number;
+      height: number;
+    };
     displayName?: string;
     thumbnailSize?: {
       width: number;
@@ -17,6 +24,15 @@ export type CaptureEvent = {
     tabTitle?: string;
     uiText?: string;
   };
+};
+
+export type OCRTextBlock = {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
 };
 
 export type PermissionState = "not-determined" | "granted" | "denied" | "restricted" | "unknown";

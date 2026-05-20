@@ -82,7 +82,8 @@ export class QuizDaemon {
     this.lastRunAt = new Date().toISOString();
 
     const settings = await this.options.repository.getSettings();
-    const capturedEvents = await collectEnabledCaptureEvents(settings, this.options.captureAssetsDir);
+    const recentEvents = await this.options.repository.listRecentEvents(20);
+    const capturedEvents = await collectEnabledCaptureEvents(settings, recentEvents, this.options.captureAssetsDir);
 
     for (const event of capturedEvents) {
       await this.options.repository.addEvent(event);

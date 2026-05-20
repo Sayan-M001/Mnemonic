@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CaptureEvent, CaptureSettings, PermissionSnapshot, PermissionState } from "../shared/types.js";
+import { extractTextFromImage } from "./ocrService.js";
 
 const MIN_CLIPBOARD_LENGTH = 12;
 const BLOCKED_WINDOW_PATTERNS = [/1password/i, /keychain/i, /password/i, /private browsing/i, /incognito/i];
@@ -12,6 +13,7 @@ const execFileAsync = promisify(execFile);
 
 export async function collectEnabledCaptureEvents(
   settings: CaptureSettings,
+  recentEvents: CaptureEvent[],
   captureAssetsDir: string
 ): Promise<CaptureEvent[]> {
   if (settings.capturePaused) {
@@ -21,7 +23,7 @@ export async function collectEnabledCaptureEvents(
   const events: CaptureEvent[] = [];
 
   if (settings.clipboardEnabled) {
-    const clipboardEvent = collectClipboardEvent();
+    const clipboardEvent = collectClipboardEvent(recentEvents);
     if (clipboardEvent) {
       events.push(clipboardEvent);
     }
@@ -109,7 +111,7 @@ export function classifySensitivity(content: string): CaptureEvent["sensitivity"
   return "low";
 }
 
-function collectClipboardEvent(): CaptureEvent | null {
+function collectClipboardEvent(recentEvents: CaptureEvent[]): CaptureEvent | null {
   const text = clipboard.readText().trim();
 
   if (text.length < MIN_CLIPBOARD_LENGTH) {
@@ -117,12 +119,14 @@ function collectClipboardEvent(): CaptureEvent | null {
   }
 
   const sensitivity = classifySensitivity(text);
+  const content = sensitivity === "high" ? "Clipboard text looked sensitive and was skipped by Mnemonic." : text;
+  const latestClipboardEvent = recentEvents.find((event) => event.source === "clipboard");
 
-  return createEvent(
-    "clipboard",
-    sensitivity === "high" ? "Clipboard text looked sensitive and was skipped by Mnemonic." : text,
-    sensitivity
-  );
+  if (latestClipboardEvent?.content === content) {
+    return null;
+  }
+
+  return createEvent("clipboard", content, sensitivity);
 }
 
 async function collectWindowSourceEvent(captureAssetsDir: string): Promise<CaptureEvent | null> {
@@ -149,17 +153,23 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       contentParts.push(`\nVisible text:\n${activeWindow.uiText}`);
     }
 
-    let content = contentParts.join(". ");
-    const sensitivity = classifySensitivity(content);
-    if (sensitivity === "high") {
-      content = `Frontmost app is ${appName}. Content was redacted due to high sensitivity.`;
-    }
-
     const screenshotPath = await captureWindowPreview({
       appName,
       windowTitle,
       captureAssetsDir
     });
+    const ocrResult = screenshotPath ? await extractTextFromImage(screenshotPath) : null;
+    const ocrText = normalizeOCRText(ocrResult?.fullText);
+
+    if (ocrText && ocrText !== activeWindow.uiText) {
+      contentParts.push(`\nOCR text:\n${ocrText}`);
+    }
+
+    let content = contentParts.join(". ");
+    const sensitivity = classifySensitivity(content);
+    if (sensitivity === "high") {
+      content = `Frontmost app is ${appName}. Content was redacted due to high sensitivity.`;
+    }
 
     return createEvent("active_window", content, sensitivity, {
       appName,
@@ -167,7 +177,11 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       url: activeWindow.url,
       tabTitle: activeWindow.tabTitle,
       uiText: sensitivity === "high" ? undefined : activeWindow.uiText,
-      screenshotPath
+      screenshotPath,
+      ocrText: sensitivity === "high" ? undefined : ocrText,
+      ocrBlocks: sensitivity === "high" ? undefined : ocrResult?.blocks,
+      ocrAverageConfidence: sensitivity === "high" ? undefined : ocrResult?.averageConfidence,
+      ocrImageSize: sensitivity === "high" ? undefined : ocrResult?.imageSize
     });
   }
 
@@ -232,7 +246,7 @@ async function captureWindowPreview({
   try {
     const sources = await desktopCapturer.getSources({
       types: ["window"],
-      thumbnailSize: { width: 1440, height: 900 },
+      thumbnailSize: { width: 2048, height: 1280 },
       fetchWindowIcons: false
     });
 
@@ -313,6 +327,11 @@ function chooseWindowSource(
 
 function normalizeWindowMatch(value?: string) {
   return (value ?? "").trim().toLowerCase();
+}
+
+function normalizeOCRText(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 async function getAccessibilityStatus(): Promise<PermissionState> {

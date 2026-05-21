@@ -25,6 +25,7 @@ export class QuizDaemon {
   private lastQuizRunAt: string | null = null;
   private nextQuizRunAt: string | null = null;
   private lastNotifiedSourceSignature: string | null = null;
+  private isRunning = false;
 
   constructor(private readonly options: DaemonOptions) {
     this.intervalMs = options.intervalMs ?? 30_000;
@@ -91,22 +92,33 @@ export class QuizDaemon {
   }
 
   private async runOnce({ forceQuiz = false }: { forceQuiz?: boolean } = {}) {
-    this.lastRunAt = new Date().toISOString();
-
-    const settings = await this.options.repository.getSettings();
-    const recentEvents = await this.options.repository.listRecentEvents(20);
-    const capturedEvents = await collectEnabledCaptureEvents(settings, recentEvents, this.options.captureAssetsDir);
-
-    for (const event of capturedEvents) {
-      await this.options.repository.addEvent(event);
+    if (this.isRunning) {
+      console.warn("QuizDaemon runOnce skipped: already running");
+      return;
     }
+    this.isRunning = true;
+    try {
+      this.lastRunAt = new Date().toISOString();
 
-    if (this.shouldRunQuiz(forceQuiz)) {
-      await this.runQuizCycle(settings);
+      const settings = await this.options.repository.getSettings();
+      const recentEvents = await this.options.repository.listRecentEvents(20);
+      const capturedEvents = await collectEnabledCaptureEvents(settings, recentEvents, this.options.captureAssetsDir);
+
+      for (const event of capturedEvents) {
+        await this.options.repository.addEvent(event);
+      }
+
+      if (this.shouldRunQuiz(forceQuiz)) {
+        await this.runQuizCycle(settings);
+      }
+
+      await this.broadcastSnapshot();
+      this.scheduleNextRun();
+    } catch (error) {
+      console.error("QuizDaemon runOnce failed:", error);
+    } finally {
+      this.isRunning = false;
     }
-
-    await this.broadcastSnapshot();
-    this.scheduleNextRun();
   }
 
   private async broadcastSnapshot() {
@@ -134,49 +146,75 @@ export class QuizDaemon {
   }
 
   private async runQuizCycle(settings: CaptureSettings) {
-    const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(500);
-    const latestAttempt = await this.options.repository.getLatestAttempt();
-    const attempt = hasAnyCaptureSourceEnabled(settings)
-      ? await this.generateAttemptFromCurrentWindow(events)
-      : {
-          id: randomUUID(),
-          status: "blocked" as const,
-          createdAt: new Date().toISOString(),
-          reason: "No capture sources are enabled yet. Turn on clipboard or frontmost window capture to start building context.",
-          sourceEvents: [],
-          sourceSegments: [],
-          questions: [],
-          generation: {
-            source: "heuristic" as const,
-            promptVersion: "system-default-v1"
-          }
-        };
+    try {
+      this.lastQuizRunAt = new Date().toISOString();
+      const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(500);
+      const latestAttempt = await this.options.repository.getLatestAttempt();
+      const attempt = hasAnyCaptureSourceEnabled(settings)
+        ? await this.generateAttemptFromCurrentWindow(events)
+        : {
+            id: randomUUID(),
+            status: "blocked" as const,
+            createdAt: new Date().toISOString(),
+            reason: "No capture sources are enabled yet. Turn on clipboard or frontmost window capture to start building context.",
+            sourceEvents: [],
+            sourceSegments: [],
+            questions: [],
+            generation: {
+              source: "heuristic" as const,
+              promptVersion: "system-default-v1"
+            }
+          };
 
-    this.lastQuizRunAt = new Date().toISOString();
-    await this.options.repository.saveAttempt(attempt);
+      await this.options.repository.saveAttempt(attempt);
 
-    const sourceSignature = (attempt.sourceSegments ?? [])
-      .map((segment) => segment.id)
-      .concat(attempt.sourceEvents.map((event) => event.id))
-      .join(":");
-    if (attempt.status === "quiz_ready" && sourceSignature !== this.lastNotifiedSourceSignature) {
-      this.lastNotifiedSourceSignature = sourceSignature;
-      new Notification({
-        title: "Mnemonic quiz ready",
-        body: `${attempt.questions.length} questions generated from your captured activity.`
-      }).show();
-    }
+      const sourceSignature = (attempt.sourceSegments ?? [])
+        .map((segment) => segment.id)
+        .concat(attempt.sourceEvents.map((event) => event.id))
+        .join(":");
+      if (attempt.status === "quiz_ready" && sourceSignature !== this.lastNotifiedSourceSignature) {
+        this.lastNotifiedSourceSignature = sourceSignature;
+        new Notification({
+          title: "Mnemonic quiz ready",
+          body: `${attempt.questions.length} questions generated from your captured activity.`
+        }).show();
+      }
 
-    if (latestAttempt?.id !== attempt.id) {
-      this.scheduleNextRun();
+      if (latestAttempt?.id !== attempt.id) {
+        this.scheduleNextRun();
+      }
+    } catch (error) {
+      console.error("QuizDaemon runQuizCycle failed:", error);
     }
   }
 
   private async generateAttemptFromCurrentWindow(events: CaptureEvent[]) {
-    const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
-    const segments = await generateSegmentsWithAI(windowEvents);
-    await this.options.repository.saveSegments(segments);
-    return generateQuizAttemptWithAI(windowEvents.length > 0 ? segments : [], windowEvents);
+    try {
+      const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
+      const segments = await generateSegmentsWithAI(windowEvents);
+      try {
+        await this.options.repository.saveSegments(segments);
+      } catch (saveError) {
+        console.error("Failed to save segments:", saveError);
+      }
+      return await generateQuizAttemptWithAI(windowEvents.length > 0 ? segments : [], windowEvents);
+    } catch (error) {
+      console.error("generateAttemptFromCurrentWindow failed:", error);
+      return {
+        id: randomUUID(),
+        status: "blocked" as const,
+        createdAt: new Date().toISOString(),
+        reason: `Failed to generate quiz: ${error instanceof Error ? error.message : String(error)}`,
+        sourceEvents: events.slice(0, 5),
+        sourceSegments: [],
+        questions: [],
+        generation: {
+          source: "ai" as const,
+          promptVersion: "ai-quiz-v1",
+          failureReason: error instanceof Error ? error.message : String(error)
+        }
+      };
+    }
   }
 }
 

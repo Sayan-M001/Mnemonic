@@ -29,64 +29,90 @@ export const defaultCaptureSettings: CaptureSettings = {
 };
 
 export class LocalJsonQuizRepository implements QuizRepository {
+  private queue: Promise<any> = Promise.resolve();
+
   constructor(private readonly filePath: string) {}
 
   get path() {
     return this.filePath;
   }
 
+  private async enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(op);
+    this.queue = next.catch(() => {});
+    return next;
+  }
+
   async addEvent(event: CaptureEvent) {
-    const store = await this.readStore();
-    const retainedEvents = this.filterRetainedEvents(store.events, store.settings.retentionDays);
-    store.events = [event, ...retainedEvents].slice(0, 5000);
-    await this.writeStore(store);
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      const retainedEvents = this.filterRetainedEvents(store.events, store.settings.retentionDays);
+      store.events = [event, ...retainedEvents].slice(0, 5000);
+      await this.writeStore(store);
+    });
   }
 
   async listRecentEvents(limit: number) {
-    const store = await this.readStore();
-    return this.filterRetainedEvents(store.events, store.settings.retentionDays).slice(0, limit);
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      return this.filterRetainedEvents(store.events, store.settings.retentionDays).slice(0, limit);
+    });
   }
 
   async saveSegments(segments: ActivitySegment[]) {
-    if (segments.length === 0) {
-      return;
-    }
+    return this.enqueue(async () => {
+      if (segments.length === 0) {
+        return;
+      }
 
-    const store = await this.readStore();
-    const retainedSegments = this.filterRetainedSegments(store.segments, store.settings.retentionDays);
-    store.segments = [...segments, ...retainedSegments].slice(0, 500);
-    await this.writeStore(store);
+      const store = await this.readStore();
+      const retainedSegments = this.filterRetainedSegments(store.segments, store.settings.retentionDays);
+      store.segments = [...segments, ...retainedSegments].slice(0, 500);
+      await this.writeStore(store);
+    });
   }
 
   async listRecentSegments(limit: number) {
-    const store = await this.readStore();
-    return this.filterRetainedSegments(store.segments, store.settings.retentionDays).slice(0, limit);
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      return this.filterRetainedSegments(store.segments, store.settings.retentionDays).slice(0, limit);
+    });
   }
 
   async saveAttempt(attempt: QuizAttempt) {
-    const store = await this.readStore();
-    store.attempts = [attempt, ...store.attempts].slice(0, 50);
-    await this.writeStore(store);
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      store.attempts = [attempt, ...store.attempts].slice(0, 50);
+      await this.writeStore(store);
+    });
   }
 
   async getLatestAttempt() {
-    const store = await this.readStore();
-    return store.attempts[0] ?? null;
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      return store.attempts[0] ?? null;
+    });
   }
 
   async getSettings() {
-    const store = await this.readStore();
-    return store.settings;
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      return store.settings;
+    });
   }
 
   async saveSettings(settings: CaptureSettings) {
-    const store = await this.readStore();
-    store.settings = settings;
-    await this.writeStore(store);
+    return this.enqueue(async () => {
+      const store = await this.readStore();
+      store.settings = settings;
+      await this.writeStore(store);
+    });
   }
 
   async clearAll() {
-    await this.writeStore(this.createEmptyStore());
+    return this.enqueue(async () => {
+      await this.writeStore(this.createEmptyStore());
+    });
   }
 
   private async readStore(): Promise<StoreFile> {

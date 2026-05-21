@@ -62,11 +62,13 @@ async function createDebugWindow() {
   }
 
   debugWindow = new BrowserWindow({
-    width: 1100,
-    height: 760,
-    minWidth: 860,
-    minHeight: 620,
+    width: 980,
+    height: 600,
+    minWidth: 840,
+    minHeight: 520,
     title: "Mnemonic",
+    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+    trafficLightPosition: process.platform === "darwin" ? { x: 18, y: 18 } : undefined,
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.cjs"),
       contextIsolation: true,
@@ -150,6 +152,8 @@ app.whenReady().then(async () => {
   await createTray();
   await createDebugWindow();
   daemon.start();
+}).catch((error) => {
+  console.error("Failed during Mnemonic startup:", error);
 });
 
 app.on("window-all-closed", () => {

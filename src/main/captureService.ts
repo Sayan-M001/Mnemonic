@@ -182,11 +182,16 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
     });
   }
 
-  const sources = await desktopCapturer.getSources({
-    types: ["window"],
-    thumbnailSize: { width: 1, height: 1 },
-    fetchWindowIcons: false
-  });
+  let sources: Electron.DesktopCapturerSource[] = [];
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ["window"],
+      thumbnailSize: { width: 1, height: 1 },
+      fetchWindowIcons: false
+    });
+  } catch {
+    return null;
+  }
 
   const names = sources
     .map((source) => source.name.trim())

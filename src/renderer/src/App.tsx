@@ -54,6 +54,13 @@ function App() {
     setSnapshot((current) => (current ? { ...current, permissions } : current));
   }
 
+  async function requestScreenPermission() {
+    setActionError(null);
+    setActionMessage(null);
+    const permissions = await window.mnemonic.requestScreenPermission();
+    setSnapshot((current) => (current ? { ...current, permissions } : current));
+  }
+
   async function clearLocalData() {
     setActionError(null);
     setActionMessage(null);
@@ -106,6 +113,7 @@ function App() {
         setStep={setSetupStep}
         updateSettings={updateSettings}
         requestAccessibilityPermission={requestAccessibilityPermission}
+        requestScreenPermission={requestScreenPermission}
         runCaptureNow={runCaptureNow}
         openDashboard={() => setView("dashboard")}
       />
@@ -122,6 +130,7 @@ function App() {
       snapshot={snapshot}
       updateSettings={updateSettings}
       requestAccessibilityPermission={requestAccessibilityPermission}
+      requestScreenPermission={requestScreenPermission}
       runCaptureNow={runCaptureNow}
       openSetup={() => setView("setup")}
     />
@@ -137,6 +146,7 @@ function SetupFlow({
   setStep,
   updateSettings,
   requestAccessibilityPermission,
+  requestScreenPermission,
   runCaptureNow,
   openDashboard
 }: {
@@ -148,6 +158,7 @@ function SetupFlow({
   setStep: (step: number) => void;
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
+  requestScreenPermission: () => Promise<void>;
   runCaptureNow: () => Promise<void>;
   openDashboard: () => void;
 }) {
@@ -193,6 +204,7 @@ function SetupFlow({
               settings={settings}
               updateSettings={updateSettings}
               requestAccessibilityPermission={requestAccessibilityPermission}
+              requestScreenPermission={requestScreenPermission}
               runCaptureNow={runCaptureNow}
               next={() => setStep(2)}
             />
@@ -242,6 +254,7 @@ function SetupPermissions({
   settings,
   updateSettings,
   requestAccessibilityPermission,
+  requestScreenPermission,
   runCaptureNow,
   next
 }: {
@@ -251,6 +264,7 @@ function SetupPermissions({
   settings: CaptureSettings | null;
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
+  requestScreenPermission: () => Promise<void>;
   runCaptureNow: () => Promise<void>;
   next: () => void;
 }) {
@@ -258,33 +272,28 @@ function SetupPermissions({
     return <p>Loading permissions...</p>;
   }
 
-  const hasEnabledSource = hasAnyEnabledSource(settings);
-
   return (
     <div className="setup-step">
-      <p className="eyebrow">Consent</p>
-      <h2>Choose what Mnemonic can remember.</h2>
+      <p className="eyebrow">Permissions</p>
+      <h2>Enable App Permissions</h2>
       <p>
-        Clipboard, frontmost app/window, and screen elements are opt-in. Microphone is hidden until audio transcription
-        is actually implemented.
+        Mnemonic requires accessibility and screen recording access to capture app details, window titles, and visual contents.
       </p>
       <PermissionsPanel
         permissions={permissions}
-        settings={settings}
-        updateSettings={updateSettings}
         requestAccessibilityPermission={requestAccessibilityPermission}
+        requestScreenPermission={requestScreenPermission}
       />
       <div className="button-row full-width-row">
-        <button className="secondary-button" disabled={!hasEnabledSource} type="button" onClick={runCaptureNow}>
+        <button className="secondary-button" type="button" onClick={runCaptureNow}>
           Run capture now
         </button>
-        <button disabled={!hasEnabledSource} type="button" onClick={next}>
+        <button type="button" onClick={next}>
           Continue
         </button>
       </div>
       {actionMessage ? <p className="success-text">{actionMessage}</p> : null}
       {actionError ? <p className="error-text">{actionError}</p> : null}
-      {!hasEnabledSource ? <p className="helper-text">Enable at least one source to continue.</p> : null}
     </div>
   );
 }
@@ -336,6 +345,7 @@ function Dashboard({
   snapshot,
   updateSettings,
   requestAccessibilityPermission,
+  requestScreenPermission,
   runCaptureNow,
   openSetup
 }: {
@@ -347,6 +357,7 @@ function Dashboard({
   snapshot: DebugSnapshot | null;
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
+  requestScreenPermission: () => Promise<void>;
   runCaptureNow: () => Promise<void>;
   openSetup: () => void;
 }) {
@@ -385,9 +396,8 @@ function Dashboard({
             {settings ? (
               <PermissionsPanel
                 permissions={snapshot?.permissions ?? null}
-                settings={settings}
-                updateSettings={updateSettings}
                 requestAccessibilityPermission={requestAccessibilityPermission}
+                requestScreenPermission={requestScreenPermission}
               />
             ) : (
               <p>Loading...</p>
@@ -446,37 +456,30 @@ function DaemonCard({ snapshot }: { snapshot: DebugSnapshot | null }) {
 
 function PermissionsPanel({
   permissions,
-  settings,
-  updateSettings,
-  requestAccessibilityPermission
+  requestAccessibilityPermission,
+  requestScreenPermission
 }: {
   permissions?: PermissionSnapshot | null;
-  settings: CaptureSettings;
-  updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission?: () => Promise<void>;
+  requestScreenPermission?: () => Promise<void>;
 }) {
   return (
     <div className="permission-list">
-      <ToggleRow
-        title="Clipboard"
-        description="Reads clipboard text periodically. Sensitive-looking values are redacted before storage."
-        checked={settings.clipboardEnabled}
-        onChange={(checked) => updateSettings({ clipboardEnabled: checked })}
-      />
       <PermissionActionRow
         title="Accessibility"
-        description="Required for accurate frontmost app/window detection."
+        description="Required for accurate frontmost app/window detection, browser tab URL logging, and active window capturing."
         status={permissions?.accessibility}
         checked={permissions?.accessibility === "granted"}
         onRequest={requestAccessibilityPermission}
         onChange={() => undefined}
       />
-      <ToggleRow
-        title="Frontmost window"
-        description="Captures the active app and focused window title when Accessibility is granted."
-        checked={settings.activeWindowEnabled}
-        disabled={permissions?.accessibility !== "granted"}
-        onChange={(checked) => updateSettings({ activeWindowEnabled: checked })}
+      <PermissionActionRow
+        title="Screen Recording"
+        description="Required for visual window previews and high-fidelity OCR text extraction."
+        status={permissions?.screen}
+        checked={permissions?.screen === "granted"}
+        onRequest={requestScreenPermission}
+        onChange={() => undefined}
       />
     </div>
   );

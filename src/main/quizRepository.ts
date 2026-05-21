@@ -23,8 +23,8 @@ type StoreFile = {
 
 export const defaultCaptureSettings: CaptureSettings = {
   capturePaused: false,
-  clipboardEnabled: false,
-  activeWindowEnabled: false,
+  clipboardEnabled: true,
+  activeWindowEnabled: true,
   retentionDays: 7
 };
 

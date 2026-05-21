@@ -51,7 +51,14 @@ async function createDebugWindow() {
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.show();
     debugWindow.focus();
+    if (app.dock) {
+      app.dock.show();
+    }
     return debugWindow;
+  }
+
+  if (app.dock) {
+    app.dock.show();
   }
 
   debugWindow = new BrowserWindow({
@@ -69,6 +76,9 @@ async function createDebugWindow() {
 
   debugWindow.on("closed", () => {
     debugWindow = null;
+    if (app.dock) {
+      app.dock.hide();
+    }
   });
 
   if (isDev) {
@@ -134,6 +144,9 @@ ipcMain.handle("asset:open-image", async (_event, imagePath: string) => {
 });
 
 app.whenReady().then(async () => {
+  if (app.dock) {
+    app.dock.hide();
+  }
   await createTray();
   await createDebugWindow();
   daemon.start();

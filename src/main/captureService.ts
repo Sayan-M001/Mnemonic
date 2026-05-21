@@ -5,7 +5,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CaptureEvent, CaptureSettings, PermissionSnapshot, PermissionState } from "../shared/types.js";
-import { extractStructuredContext } from "./contextExtractionService.js";
 import { extractTextFromImage } from "./ocrService.js";
 
 const MIN_CLIPBOARD_LENGTH = 12;
@@ -169,18 +168,6 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       content = `Frontmost app is ${appName}. Content was redacted due to high sensitivity.`;
     }
 
-    const structuredContext =
-      sensitivity === "high"
-        ? undefined
-        : extractStructuredContext({
-            appName,
-            windowTitle,
-            url: activeWindow.url,
-            tabTitle: activeWindow.tabTitle,
-            uiText: activeWindow.uiText,
-            ocrText
-          });
-
     return createEvent("active_window", content, sensitivity, {
       appName,
       windowTitle,
@@ -191,8 +178,7 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       ocrText: sensitivity === "high" ? undefined : ocrText,
       ocrBlocks: sensitivity === "high" ? undefined : ocrResult?.blocks,
       ocrAverageConfidence: sensitivity === "high" ? undefined : ocrResult?.averageConfidence,
-      ocrImageSize: sensitivity === "high" ? undefined : ocrResult?.imageSize,
-      structuredContext
+      ocrImageSize: sensitivity === "high" ? undefined : ocrResult?.imageSize
     });
   }
 

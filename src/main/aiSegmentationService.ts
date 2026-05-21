@@ -37,10 +37,8 @@ export async function generateSegmentsWithAI(events: CaptureEvent[]): Promise<Ac
 
     return normalizeSegments(data, usefulEvents, model);
   } catch (error) {
-    return buildFallbackSegments(
-      usefulEvents,
-      error instanceof Error ? error.message : "AI segmentation failed"
-    );
+    console.error("AI segmentation failed, returning empty segments:", error);
+    return [];
   }
 }
 
@@ -63,7 +61,6 @@ function buildUserPrompt(events: CaptureEvent[]) {
     windowTitle: event.metadata?.windowTitle ?? null,
     url: event.metadata?.url ?? null,
     ocrText: event.metadata?.ocrText?.slice(0, 1200) ?? null,
-    structuredContext: event.metadata?.structuredContext ?? null,
     content: event.content.slice(0, 800)
   }));
 
@@ -114,19 +111,16 @@ function normalizeSegments(payload: AISegmentPayload, events: CaptureEvent[], mo
     })
     .filter((segment): segment is ActivitySegment => Boolean(segment));
 
-  return segments.length > 0 ? segments : buildFallbackSegments(events, "AI returned no valid segments.");
+  return segments.length > 0 ? segments : [];
 }
 
+/*
 function buildFallbackSegments(events: CaptureEvent[], failureReason: string): ActivitySegment[] {
   const sorted = [...events].sort(sortByCapturedAt);
   const groups = new Map<string, CaptureEvent[]>();
 
   for (const event of sorted) {
-    const key = [
-      event.metadata?.appName ?? "unknown_app",
-      event.metadata?.structuredContext?.surfaceType ?? "captured_activity",
-      event.metadata?.structuredContext?.activityKind ?? "working"
-    ].join("::");
+    const key = event.metadata?.appName ?? "unknown_app";
     const bucket = groups.get(key) ?? [];
     bucket.push(event);
     groups.set(key, bucket);
@@ -144,7 +138,7 @@ function buildFallbackSegments(events: CaptureEvent[], failureReason: string): A
       subjects: context?.subjects ?? [],
       topicHints: context?.topicHints ?? [],
       evidence: context?.evidence ?? [],
-      confidence: context?.confidence ?? 0.45,
+      confidence: context?.confidence ?? 0.5,
       sourceEventIds: group.map((event) => event.id),
       generation: {
         source: "heuristic",
@@ -154,6 +148,7 @@ function buildFallbackSegments(events: CaptureEvent[], failureReason: string): A
     }, group);
   });
 }
+*/
 
 function buildSegment(
   segment: {

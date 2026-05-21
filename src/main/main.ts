@@ -85,6 +85,11 @@ function createTray() {
   const trayIcon = createTrayIcon();
   tray = new Tray(trayIcon);
   tray.setToolTip("Mnemonic is running in the background");
+  
+  tray.on("click", () => {
+    void createDebugWindow();
+  });
+
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -134,8 +139,15 @@ app.whenReady().then(async () => {
   daemon.start();
 });
 
-app.on("window-all-closed", () => {
+app.on("window-all-closed", (event) => {
+  // Prevent Electron from quitting when the last window is closed,
+  // allowing the background daemon to keep running.
+  event.preventDefault();
   debugWindow = null;
+});
+
+app.on("activate", () => {
+  void createDebugWindow();
 });
 
 app.on("before-quit", () => {
@@ -151,7 +163,8 @@ function createTrayIcon() {
     </svg>
   `;
 
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  const img = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  return img.resize({ width: 18, height: 18 });
 }
 
 function resolveIntervalMs({

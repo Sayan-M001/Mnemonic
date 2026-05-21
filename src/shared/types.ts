@@ -1,7 +1,7 @@
 export type CaptureEvent = {
   id: string;
   capturedAt: string;
-  source: "manual" | "clipboard" | "active_window" | "screen" | "audio";
+  source: "clipboard" | "active_window";
   content: string;
   sensitivity: "low" | "medium" | "high";
   metadata?: {
@@ -15,15 +15,48 @@ export type CaptureEvent = {
       width: number;
       height: number;
     };
-    displayName?: string;
-    thumbnailSize?: {
-      width: number;
-      height: number;
-    };
+    structuredContext?: StructuredContext;
     url?: string;
     tabTitle?: string;
     uiText?: string;
   };
+};
+
+export type InterpreterSource = "ai" | "heuristic";
+
+export type InterpreterInfo = {
+  source: InterpreterSource;
+  model?: string;
+  promptVersion: string;
+  failureReason?: string;
+};
+
+export type StructuredContext = {
+  surfaceType: string;
+  activityKind: string;
+  entities: string[];
+  subjects: string[];
+  participants: string[];
+  evidence: string[];
+  artifacts: {
+    titles: string[];
+    files: string[];
+    urls: string[];
+    domains: string[];
+    documents: string[];
+  };
+  resourceRefs: {
+    filePaths: string[];
+    urls: string[];
+    domains: string[];
+    repoNames: string[];
+    issueIds: string[];
+  };
+  topicHints: string[];
+  summary: string;
+  confidence: number;
+  dynamicContext: Record<string, string | number | boolean | string[] | null>;
+  interpreter: InterpreterInfo;
 };
 
 export type OCRTextBlock = {
@@ -48,8 +81,6 @@ export type CaptureSettings = {
   capturePaused: boolean;
   clipboardEnabled: boolean;
   activeWindowEnabled: boolean;
-  screenCaptureEnabled: boolean;
-  audioCaptureEnabled: boolean;
   retentionDays: number;
 };
 
@@ -67,6 +98,7 @@ export type QuizAttempt = {
   reason: string;
   sourceEvents: CaptureEvent[];
   questions: QuizQuestion[];
+  generation?: InterpreterInfo;
 };
 
 export type DebugSnapshot = {

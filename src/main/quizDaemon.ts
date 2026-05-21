@@ -1,7 +1,7 @@
 import { BrowserWindow, Notification } from "electron";
 import { classifySensitivity, collectEnabledCaptureEvents, getPermissionSnapshot } from "./captureService.js";
 import type { QuizRepository } from "./quizRepository.js";
-import { generateQuizAttempt } from "./quizGenerator.js";
+import { generateQuizAttemptWithAI } from "./aiQuizService.js";
 import type { CaptureEvent, CaptureSettings, DebugSnapshot } from "../shared/types.js";
 import { randomUUID } from "node:crypto";
 
@@ -91,14 +91,18 @@ export class QuizDaemon {
 
     const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(10);
     const attempt = hasAnyCaptureSourceEnabled(settings)
-      ? generateQuizAttempt(events)
+        ? await generateQuizAttemptWithAI(events)
       : {
           id: randomUUID(),
           status: "blocked" as const,
           createdAt: new Date().toISOString(),
-          reason: "No capture sources are enabled yet. Turn on Manual Notes to start with explicit user-provided context.",
+          reason: "No capture sources are enabled yet. Turn on clipboard or frontmost window capture to start building context.",
           sourceEvents: [],
-          questions: []
+          questions: [],
+          generation: {
+            source: "heuristic" as const,
+            promptVersion: "system-default-v1"
+          }
         };
 
     await this.options.repository.saveAttempt(attempt);
@@ -129,7 +133,6 @@ export class QuizDaemon {
 function hasAnyCaptureSourceEnabled(settings: CaptureSettings) {
   return (
     settings.clipboardEnabled ||
-    settings.activeWindowEnabled ||
-    settings.audioCaptureEnabled
+    settings.activeWindowEnabled
   );
 }

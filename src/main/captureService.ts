@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CaptureEvent, CaptureSettings, PermissionSnapshot, PermissionState } from "../shared/types.js";
+import { interpretStructuredContext } from "./aiInterpretationService.js";
 import { extractTextFromImage } from "./ocrService.js";
 
 const MIN_CLIPBOARD_LENGTH = 12;
@@ -35,9 +36,6 @@ export async function collectEnabledCaptureEvents(
       events.push(windowEvent);
     }
   }
-
-  // Screen capture disabled: PNG-only screenshots without OCR produce no useful
-  // text for quiz generation. Re-enable after ScreenCaptureKit/Vision OCR is wired.
 
   return events;
 }
@@ -171,6 +169,18 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       content = `Frontmost app is ${appName}. Content was redacted due to high sensitivity.`;
     }
 
+    const structuredContext =
+      sensitivity === "high"
+        ? undefined
+        : await interpretStructuredContext({
+            appName,
+            windowTitle,
+            url: activeWindow.url,
+            tabTitle: activeWindow.tabTitle,
+            uiText: activeWindow.uiText,
+            ocrText
+          });
+
     return createEvent("active_window", content, sensitivity, {
       appName,
       windowTitle,
@@ -181,7 +191,8 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       ocrText: sensitivity === "high" ? undefined : ocrText,
       ocrBlocks: sensitivity === "high" ? undefined : ocrResult?.blocks,
       ocrAverageConfidence: sensitivity === "high" ? undefined : ocrResult?.averageConfidence,
-      ocrImageSize: sensitivity === "high" ? undefined : ocrResult?.imageSize
+      ocrImageSize: sensitivity === "high" ? undefined : ocrResult?.imageSize,
+      structuredContext
     });
   }
 
@@ -204,33 +215,6 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
   const content = `Open desktop windows visible to Mnemonic: ${names.join(", ")}.`;
   return createEvent("active_window", content, classifySensitivity(content), {
     windowTitle: names.join(", ")
-  });
-}
-
-async function collectScreenSourceEvent(captureAssetsDir: string): Promise<CaptureEvent | null> {
-  const sources = await desktopCapturer.getSources({
-    types: ["screen"],
-    thumbnailSize: { width: 1440, height: 900 }
-  });
-
-  if (sources.length === 0) {
-    return null;
-  }
-
-  const primarySource = sources[0];
-  const thumbnailSize = primarySource.thumbnail.getSize();
-  const screenshotPath = await saveScreenshotPreview(primarySource.thumbnail.toPNG(), captureAssetsDir);
-
-  const sourceSummaries = sources.map((source) => {
-    const size = source.thumbnail.getSize();
-    return `${source.name} (${size.width}x${size.height})`;
-  });
-
-  const content = `Captured screen preview from ${primarySource.name}. Available displays: ${sourceSummaries.join(", ")}. Local preview saved at ${screenshotPath}.`;
-  return createEvent("screen", content, "medium", {
-    displayName: primarySource.name,
-    screenshotPath,
-    thumbnailSize
   });
 }
 
@@ -279,13 +263,6 @@ function createEvent(
 
 function getMediaStatus(mediaType: "screen" | "microphone"): PermissionState {
   return systemPreferences.getMediaAccessStatus(mediaType);
-}
-
-async function saveScreenshotPreview(bytes: Buffer, captureAssetsDir: string) {
-  await fs.mkdir(captureAssetsDir, { recursive: true });
-  const filePath = path.join(captureAssetsDir, `screen-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
-  await fs.writeFile(filePath, bytes);
-  return filePath;
 }
 
 async function saveWindowPreview(bytes: Buffer, captureAssetsDir: string) {

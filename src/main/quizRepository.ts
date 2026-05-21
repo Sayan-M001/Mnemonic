@@ -22,8 +22,6 @@ export const defaultCaptureSettings: CaptureSettings = {
   capturePaused: false,
   clipboardEnabled: false,
   activeWindowEnabled: false,
-  screenCaptureEnabled: false,
-  audioCaptureEnabled: false,
   retentionDays: 7
 };
 
@@ -75,12 +73,12 @@ export class LocalJsonQuizRepository implements QuizRepository {
   private async readStore(): Promise<StoreFile> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<StoreFile>;
+      const parsed = await this.parseStoreFile(raw);
 
       return {
         events: parsed.events ?? [],
         attempts: parsed.attempts ?? [],
-        settings: { ...defaultCaptureSettings, ...parsed.settings }
+        settings: normalizeSettings(parsed.settings)
       };
     } catch (error) {
       if (isMissingFileError(error)) {
@@ -95,7 +93,10 @@ export class LocalJsonQuizRepository implements QuizRepository {
 
   private async writeStore(store: StoreFile) {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    await fs.writeFile(this.filePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+    const nextRaw = `${JSON.stringify(store, null, 2)}\n`;
+    const tempPath = `${this.filePath}.tmp`;
+    await fs.writeFile(tempPath, nextRaw, "utf8");
+    await fs.rename(tempPath, this.filePath);
   }
 
   private createEmptyStore(): StoreFile {
@@ -110,8 +111,68 @@ export class LocalJsonQuizRepository implements QuizRepository {
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
     return events.filter((event) => new Date(event.capturedAt).getTime() >= cutoff);
   }
+
+  private async parseStoreFile(raw: string): Promise<Partial<StoreFile>> {
+    try {
+      return JSON.parse(raw) as Partial<StoreFile>;
+    } catch (error) {
+      const repaired = tryRepairStoreJson(raw, error);
+      if (!repaired) {
+        throw error;
+      }
+
+      const repairedStore = {
+        events: repaired.events ?? [],
+        attempts: repaired.attempts ?? [],
+        settings: normalizeSettings(repaired.settings)
+      };
+
+      await this.backupCorruptedStore(raw);
+      await this.writeStore(repairedStore);
+      return repairedStore;
+    }
+  }
+
+  private async backupCorruptedStore(raw: string) {
+    const backupPath = `${this.filePath}.corrupt-${Date.now()}.json`;
+    await fs.writeFile(backupPath, raw, "utf8");
+  }
 }
 
 function isMissingFileError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function normalizeSettings(settings: Partial<CaptureSettings> | undefined): CaptureSettings {
+  return {
+    ...defaultCaptureSettings,
+    ...(settings ?? {})
+  };
+}
+
+function tryRepairStoreJson(raw: string, error: unknown): Partial<StoreFile> | null {
+  const message = error instanceof Error ? error.message : "";
+  const positionMatch = message.match(/position (\d+)/);
+
+  if (positionMatch) {
+    const position = Number(positionMatch[1]);
+    const candidate = raw.slice(0, position).trimEnd();
+    try {
+      return JSON.parse(candidate) as Partial<StoreFile>;
+    } catch {
+      // Fall through to the generic repair attempt.
+    }
+  }
+
+  const lastBrace = raw.lastIndexOf("}");
+  if (lastBrace !== -1) {
+    const candidate = raw.slice(0, lastBrace + 1);
+    try {
+      return JSON.parse(candidate) as Partial<StoreFile>;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }

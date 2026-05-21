@@ -238,11 +238,6 @@ textarea {
   text-align: left;
 }
 
-.onboarding-stage .manual-form {
-  width: min(560px, 100%);
-}
-
-.onboarding-stage .manual-form button,
 .onboarding-stage .setup-step > button {
   width: min(560px, 100%);
 }
@@ -562,8 +557,7 @@ h2 {
   color: #766a5c;
 }
 
-.permission-list,
-.manual-form {
+.permission-list {
   display: grid;
   gap: 14px;
 }

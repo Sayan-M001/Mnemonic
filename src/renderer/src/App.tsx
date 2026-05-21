@@ -312,7 +312,7 @@ function SetupDone({
         <DaemonCard snapshot={snapshot} />
         <div className="mini-stat">
           <strong>{snapshot?.events.length ?? 0}</strong>
-          <span>saved context notes</span>
+          <span>captured context events</span>
         </div>
       </div>
       <div className="button-row">
@@ -545,6 +545,12 @@ function AttemptView({ attempt }: { attempt: QuizAttempt }) {
       <div className="blocked">
         <h2>Quiz not ready yet</h2>
         <p>{attempt.reason}</p>
+        {attempt.generation ? (
+          <small className="muted">
+            Quiz generation: {attempt.generation.source}
+            {attempt.generation.model ? ` (${attempt.generation.model})` : ""}
+          </small>
+        ) : null}
         <SourceChips events={attempt.sourceEvents} />
       </div>
     );
@@ -553,6 +559,12 @@ function AttemptView({ attempt }: { attempt: QuizAttempt }) {
   return (
     <div className="questions">
       <p className="reason">{attempt.reason}</p>
+      {attempt.generation ? (
+        <small className="muted">
+          Quiz generation: {attempt.generation.source}
+          {attempt.generation.model ? ` (${attempt.generation.model})` : ""}
+        </small>
+      ) : null}
       {attempt.questions.map((question, index) => (
         <div className="question-card" key={question.id}>
           <span>Question {index + 1}</span>
@@ -653,10 +665,38 @@ function MetadataView({ event }: { event: CaptureEvent }) {
           </dd>
         </>
       ) : null}
-      {metadata.displayName ? (
+      {metadata.structuredContext ? (
         <>
-          <dt>Display</dt>
-          <dd>{metadata.displayName}</dd>
+          <dt>Context</dt>
+          <dd style={{ display: "grid", gap: "8px" }}>
+            <div style={{ whiteSpace: "pre-wrap", background: "rgba(28, 23, 18, 0.03)", padding: "8px", borderRadius: "6px", fontSize: "0.78rem" }}>
+              {metadata.structuredContext.summary}
+            </div>
+            <small className="muted">
+              Confidence {Math.round(metadata.structuredContext.confidence * 100)}%
+              {" • "}
+              Interpreter: {metadata.structuredContext.interpreter?.source ?? "unknown"}
+              {metadata.structuredContext.interpreter?.model ? ` (${metadata.structuredContext.interpreter.model})` : ""}
+            </small>
+            <ContextChips label="Surface" values={[metadata.structuredContext.surfaceType]} />
+            <ContextChips label="Activity" values={[metadata.structuredContext.activityKind]} />
+            <ContextChips label="Entities" values={metadata.structuredContext.entities ?? []} />
+            <ContextChips label="Subjects" values={metadata.structuredContext.subjects ?? []} />
+            <ContextChips label="Participants" values={metadata.structuredContext.participants ?? []} />
+            <ContextChips label="Evidence" values={metadata.structuredContext.evidence ?? []} />
+            <ContextChips label="Artifact Titles" values={metadata.structuredContext.artifacts?.titles ?? []} />
+            <ContextChips label="Artifact Files" values={metadata.structuredContext.artifacts?.files ?? []} />
+            <ContextChips label="Artifact URLs" values={metadata.structuredContext.artifacts?.urls ?? []} />
+            <ContextChips label="Artifact Domains" values={metadata.structuredContext.artifacts?.domains ?? []} />
+            <ContextChips label="Documents" values={metadata.structuredContext.artifacts?.documents ?? []} />
+            <ContextChips label="Ref File Paths" values={metadata.structuredContext.resourceRefs?.filePaths ?? []} />
+            <ContextChips label="Ref URLs" values={metadata.structuredContext.resourceRefs?.urls ?? []} />
+            <ContextChips label="Ref Domains" values={metadata.structuredContext.resourceRefs?.domains ?? []} />
+            <ContextChips label="Ref Repo Names" values={metadata.structuredContext.resourceRefs?.repoNames ?? []} />
+            <ContextChips label="Ref Issue IDs" values={metadata.structuredContext.resourceRefs?.issueIds ?? []} />
+            <ContextChips label="Topics" values={metadata.structuredContext.topicHints ?? []} />
+            <ContextKeyValues label="Dynamic Context" values={metadata.structuredContext.dynamicContext ?? {}} />
+          </dd>
         </>
       ) : null}
       {metadata.screenshotPath ? (
@@ -668,6 +708,64 @@ function MetadataView({ event }: { event: CaptureEvent }) {
         </>
       ) : null}
     </dl>
+  );
+}
+
+function ContextChips({ label, values }: { label: string; values: string[] }) {
+  if (values.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "4px" }}>
+      <small className="muted" style={{ fontWeight: 700 }}>
+        {label}
+      </small>
+      <div className="chips">
+        {values.map((value) => (
+          <span key={`${label}-${value}`}>{value}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContextKeyValues({
+  label,
+  values
+}: {
+  label: string;
+  values: Record<string, string | number | boolean | string[] | null>;
+}) {
+  const entries = Object.entries(values).filter(([, value]) => {
+    if (value === null) {
+      return false;
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    return String(value).trim().length > 0;
+  });
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "4px" }}>
+      <small className="muted" style={{ fontWeight: 700 }}>
+        {label}
+      </small>
+      <div className="chips">
+        {entries.map(([key, value]) => (
+          <span key={`${label}-${key}`}>
+            {key}: {Array.isArray(value) ? value.join(", ") : String(value)}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -718,7 +816,7 @@ function ImageAssetPreview({ imagePath, source }: { imagePath: string; source: C
 
 function SourceChips({ events }: { events: CaptureEvent[] }) {
   if (events.length === 0) {
-    return <p className="muted">No usable source notes passed the current filters.</p>;
+    return <p className="muted">No usable captured events passed the current filters.</p>;
   }
 
   return (
@@ -739,7 +837,7 @@ function EmptyState() {
   return (
     <div className="empty">
       <h2>Waiting for first real context</h2>
-      <p>Enable a source, save a few useful notes, and Mnemonic will check whether a quiz can be generated.</p>
+      <p>Enable a source, capture a few useful events, and Mnemonic will check whether a quiz can be generated.</p>
     </div>
   );
 }

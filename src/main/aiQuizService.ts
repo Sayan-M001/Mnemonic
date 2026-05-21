@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ActivitySegment, CaptureEvent, QuizAttempt, QuizQuestion } from "../shared/types.js";
 import { requestJsonFromModel } from "./aiClient.js";
-import { generateQuizAttempt as generateHeuristicQuizAttempt } from "./quizGenerator.js";
 
 type AIQuizPayload = {
   status: "quiz_ready" | "blocked";
@@ -18,14 +17,20 @@ const PROMPT_VERSION = "ai-quiz-v1";
 const MIN_USEFUL_SEGMENTS = 1;
 
 export async function generateQuizAttemptWithAI(segments: ActivitySegment[], events: CaptureEvent[]): Promise<QuizAttempt> {
+  const createdAt = new Date().toISOString();
   const usefulSegments = segments.filter((segment) => segment.confidence >= 0.3 && segment.sourceEventIds.length > 0);
+  
   if (usefulSegments.length < MIN_USEFUL_SEGMENTS) {
-    const blocked = generateHeuristicQuizAttempt(events);
     return {
-      ...blocked,
+      id: randomUUID(),
+      status: "blocked",
+      createdAt,
+      reason: `Need at least ${MIN_USEFUL_SEGMENTS} activity segment before calling AI quiz generation.`,
+      sourceEvents: events.filter((e) => e.sensitivity !== "high").slice(0, 5),
       sourceSegments: [],
+      questions: [],
       generation: {
-        source: "heuristic",
+        source: "ai",
         promptVersion: PROMPT_VERSION,
         failureReason: `Need at least ${MIN_USEFUL_SEGMENTS} activity segment before calling AI quiz generation.`
       }
@@ -42,14 +47,19 @@ export async function generateQuizAttemptWithAI(segments: ActivitySegment[], eve
 
     return normalizeQuizPayload(data, usefulSegments, events, model);
   } catch (error) {
-    const fallback = generateHeuristicQuizAttempt(events);
+    const failureReason = error instanceof Error ? error.message : "AI quiz generation failed";
     return {
-      ...fallback,
+      id: randomUUID(),
+      status: "blocked",
+      createdAt,
+      reason: `AI generation failed: ${failureReason}`,
+      sourceEvents: events.filter((e) => e.sensitivity !== "high").slice(0, 5),
       sourceSegments: usefulSegments.slice(0, 3),
+      questions: [],
       generation: {
-        source: "heuristic",
+        source: "ai",
         promptVersion: PROMPT_VERSION,
-        failureReason: error instanceof Error ? error.message : "AI quiz generation failed"
+        failureReason
       }
     };
   }

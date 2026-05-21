@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CaptureEvent, CaptureSettings, PermissionSnapshot, PermissionState } from "../shared/types.js";
-import { interpretStructuredContext } from "./aiInterpretationService.js";
+import { extractStructuredContext } from "./contextExtractionService.js";
 import { extractTextFromImage } from "./ocrService.js";
 
 const MIN_CLIPBOARD_LENGTH = 12;
@@ -172,7 +172,7 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
     const structuredContext =
       sensitivity === "high"
         ? undefined
-        : await interpretStructuredContext({
+        : extractStructuredContext({
             appName,
             windowTitle,
             url: activeWindow.url,

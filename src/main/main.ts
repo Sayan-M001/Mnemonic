@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 import { LocalJsonQuizRepository } from "./quizRepository.js";
 import { QuizDaemon } from "./quizDaemon.js";
+import { ensureLocalEnvLoaded } from "./env.js";
 import {
   getPermissionSnapshot,
   openScreenRecordingSettings,
@@ -15,6 +16,7 @@ import type { CaptureSettings } from "../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+ensureLocalEnvLoaded();
 const isDev = !app.isPackaged;
 
 let debugWindow: BrowserWindow | null = null;
@@ -27,7 +29,20 @@ const daemon = new QuizDaemon({
   repository,
   dataPath,
   captureAssetsDir,
-  intervalMs: isDev ? 10_000 : 30_000,
+  intervalMs: resolveIntervalMs({
+    sharedKey: "MNEMONIC_CAPTURE_INTERVAL_MS",
+    devKey: "MNEMONIC_CAPTURE_INTERVAL_MS",
+    prodKey: "MNEMONIC_CAPTURE_INTERVAL_MS",
+    defaultDevMs: 10_000,
+    defaultProdMs: 30_000
+  }),
+  quizIntervalMs: resolveIntervalMs({
+    sharedKey: "MNEMONIC_QUIZ_INTERVAL_MS",
+    devKey: "MNEMONIC_QUIZ_INTERVAL_MS",
+    prodKey: "MNEMONIC_QUIZ_INTERVAL_MS",
+    defaultDevMs: 60 * 60 * 1000,
+    defaultProdMs: 60 * 60 * 1000
+  }),
   getDebugWindow: () => debugWindow,
   openDebugWindow: createDebugWindow
 });
@@ -137,4 +152,29 @@ function createTrayIcon() {
   `;
 
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+}
+
+function resolveIntervalMs({
+  sharedKey,
+  devKey,
+  prodKey,
+  defaultDevMs,
+  defaultProdMs
+}: {
+  sharedKey: string;
+  devKey: string;
+  prodKey: string;
+  defaultDevMs: number;
+  defaultProdMs: number;
+}) {
+  const rawValue =
+    process.env[sharedKey] ??
+    (isDev ? process.env[devKey] : process.env[prodKey]);
+
+  const parsed = rawValue ? Number.parseInt(rawValue, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 1_000) {
+    return parsed;
+  }
+
+  return isDev ? defaultDevMs : defaultProdMs;
 }

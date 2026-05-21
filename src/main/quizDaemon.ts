@@ -1,6 +1,7 @@
 import { BrowserWindow, Notification } from "electron";
-import { classifySensitivity, collectEnabledCaptureEvents, getPermissionSnapshot } from "./captureService.js";
+import { collectEnabledCaptureEvents, getPermissionSnapshot } from "./captureService.js";
 import type { QuizRepository } from "./quizRepository.js";
+import { generateSegmentsWithAI } from "./aiSegmentationService.js";
 import { generateQuizAttemptWithAI } from "./aiQuizService.js";
 import type { CaptureEvent, CaptureSettings, DebugSnapshot } from "../shared/types.js";
 import { randomUUID } from "node:crypto";
@@ -10,6 +11,7 @@ type DaemonOptions = {
   dataPath: string;
   captureAssetsDir: string;
   intervalMs?: number;
+  quizIntervalMs?: number;
   getDebugWindow: () => BrowserWindow | null;
   openDebugWindow: () => Promise<BrowserWindow>;
 };
@@ -19,10 +21,14 @@ export class QuizDaemon {
   private lastRunAt: string | null = null;
   private nextRunAt: string | null = null;
   private readonly intervalMs: number;
+  private readonly quizIntervalMs: number;
+  private lastQuizRunAt: string | null = null;
+  private nextQuizRunAt: string | null = null;
   private lastNotifiedSourceSignature: string | null = null;
 
   constructor(private readonly options: DaemonOptions) {
     this.intervalMs = options.intervalMs ?? 30_000;
+    this.quizIntervalMs = options.quizIntervalMs ?? 60 * 60 * 1000;
   }
 
   start() {
@@ -49,6 +55,7 @@ export class QuizDaemon {
     return {
       latestAttempt: await this.options.repository.getLatestAttempt(),
       events: await this.options.repository.listRecentEvents(20),
+      segments: await this.options.repository.listRecentSegments(8),
       settings: await this.options.repository.getSettings(),
       permissions: await getPermissionSnapshot(),
       daemon: {
@@ -56,13 +63,16 @@ export class QuizDaemon {
         lastRunAt: this.lastRunAt,
         nextRunAt: this.nextRunAt,
         intervalMs: this.intervalMs,
+        quizIntervalMs: this.quizIntervalMs,
+        lastQuizRunAt: this.lastQuizRunAt,
+        nextQuizRunAt: this.nextQuizRunAt,
         dataPath: this.options.dataPath
       }
     };
   }
 
   async runNow() {
-    await this.runOnce();
+    await this.runOnce({ forceQuiz: true });
     return this.getSnapshot();
   }
 
@@ -74,11 +84,13 @@ export class QuizDaemon {
 
   async clearLocalData() {
     this.lastNotifiedSourceSignature = null;
+    this.lastQuizRunAt = null;
+    this.nextQuizRunAt = null;
     await this.options.repository.clearAll();
     await this.broadcastSnapshot();
   }
 
-  private async runOnce() {
+  private async runOnce({ forceQuiz = false }: { forceQuiz?: boolean } = {}) {
     this.lastRunAt = new Date().toISOString();
 
     const settings = await this.options.repository.getSettings();
@@ -89,31 +101,8 @@ export class QuizDaemon {
       await this.options.repository.addEvent(event);
     }
 
-    const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(10);
-    const attempt = hasAnyCaptureSourceEnabled(settings)
-        ? await generateQuizAttemptWithAI(events)
-      : {
-          id: randomUUID(),
-          status: "blocked" as const,
-          createdAt: new Date().toISOString(),
-          reason: "No capture sources are enabled yet. Turn on clipboard or frontmost window capture to start building context.",
-          sourceEvents: [],
-          questions: [],
-          generation: {
-            source: "heuristic" as const,
-            promptVersion: "system-default-v1"
-          }
-        };
-
-    await this.options.repository.saveAttempt(attempt);
-
-    const sourceSignature = attempt.sourceEvents.map((event) => event.id).join(":");
-    if (attempt.status === "quiz_ready" && sourceSignature !== this.lastNotifiedSourceSignature) {
-      this.lastNotifiedSourceSignature = sourceSignature;
-      new Notification({
-        title: "Mnemonic quiz ready",
-        body: `${attempt.questions.length} questions generated from your saved context.`
-      }).show();
+    if (this.shouldRunQuiz(forceQuiz)) {
+      await this.runQuizCycle(settings);
     }
 
     await this.broadcastSnapshot();
@@ -127,6 +116,67 @@ export class QuizDaemon {
 
   private scheduleNextRun() {
     this.nextRunAt = new Date(Date.now() + this.intervalMs).toISOString();
+    this.nextQuizRunAt = this.lastQuizRunAt
+      ? new Date(new Date(this.lastQuizRunAt).getTime() + this.quizIntervalMs).toISOString()
+      : new Date(Date.now() + this.quizIntervalMs).toISOString();
+  }
+
+  private shouldRunQuiz(forceQuiz: boolean) {
+    if (forceQuiz) {
+      return true;
+    }
+
+    if (!this.lastQuizRunAt) {
+      return true;
+    }
+
+    return Date.now() - new Date(this.lastQuizRunAt).getTime() >= this.quizIntervalMs;
+  }
+
+  private async runQuizCycle(settings: CaptureSettings) {
+    const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(500);
+    const latestAttempt = await this.options.repository.getLatestAttempt();
+    const attempt = hasAnyCaptureSourceEnabled(settings)
+      ? await this.generateAttemptFromCurrentWindow(events)
+      : {
+          id: randomUUID(),
+          status: "blocked" as const,
+          createdAt: new Date().toISOString(),
+          reason: "No capture sources are enabled yet. Turn on clipboard or frontmost window capture to start building context.",
+          sourceEvents: [],
+          sourceSegments: [],
+          questions: [],
+          generation: {
+            source: "heuristic" as const,
+            promptVersion: "system-default-v1"
+          }
+        };
+
+    this.lastQuizRunAt = new Date().toISOString();
+    await this.options.repository.saveAttempt(attempt);
+
+    const sourceSignature = (attempt.sourceSegments ?? [])
+      .map((segment) => segment.id)
+      .concat(attempt.sourceEvents.map((event) => event.id))
+      .join(":");
+    if (attempt.status === "quiz_ready" && sourceSignature !== this.lastNotifiedSourceSignature) {
+      this.lastNotifiedSourceSignature = sourceSignature;
+      new Notification({
+        title: "Mnemonic quiz ready",
+        body: `${attempt.questions.length} questions generated from your captured activity.`
+      }).show();
+    }
+
+    if (latestAttempt?.id !== attempt.id) {
+      this.scheduleNextRun();
+    }
+  }
+
+  private async generateAttemptFromCurrentWindow(events: CaptureEvent[]) {
+    const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
+    const segments = await generateSegmentsWithAI(windowEvents);
+    await this.options.repository.saveSegments(segments);
+    return generateQuizAttemptWithAI(windowEvents.length > 0 ? segments : [], windowEvents);
   }
 }
 
@@ -135,4 +185,14 @@ function hasAnyCaptureSourceEnabled(settings: CaptureSettings) {
     settings.clipboardEnabled ||
     settings.activeWindowEnabled
   );
+}
+
+function selectEventsForCurrentQuizWindow(events: readonly CaptureEvent[], quizIntervalMs: number): CaptureEvent[] {
+  if (events.length === 0) {
+    return [];
+  }
+
+  const newest = new Date(events[0].capturedAt).getTime();
+  const cutoff = newest - quizIntervalMs;
+  return events.filter((event) => new Date(event.capturedAt).getTime() >= cutoff);
 }

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { CaptureEvent, CaptureSettings, DebugSnapshot, PermissionSnapshot, QuizAttempt } from "../../shared/types";
+import type { ActivitySegment, CaptureEvent, CaptureSettings, DebugSnapshot, PermissionSnapshot, QuizAttempt } from "../../shared/types";
 import "./styles.css";
 
 function App() {
@@ -401,6 +401,14 @@ function Dashboard({
             </div>
             {attempt ? <AttemptView attempt={attempt} /> : <EmptyState />}
           </article>
+
+          <article className="panel" style={{ minHeight: "auto" }}>
+            <div className="panel-heading">
+              <p className="eyebrow">Recent activity segments</p>
+              <span className="muted">{snapshot?.segments.length ?? 0} segments</span>
+            </div>
+            <SegmentList segments={snapshot?.segments ?? []} />
+          </article>
         </div>
 
         <article className="panel" style={{ display: "flex", flexDirection: "column" }}>
@@ -427,8 +435,10 @@ function DaemonCard({ snapshot }: { snapshot: DebugSnapshot | null }) {
       <span className={snapshot?.daemon.running ? "pulse online" : "pulse"} />
       <div>
         <strong>{snapshot?.daemon.running ? "Running in tray" : "Starting daemon"}</strong>
-        <p>Last check: {formatDate(snapshot?.daemon.lastRunAt)}</p>
-        <p>Next check: {formatDate(snapshot?.daemon.nextRunAt)}</p>
+        <p>Last capture check: {formatDate(snapshot?.daemon.lastRunAt)}</p>
+        <p>Next capture check: {formatDate(snapshot?.daemon.nextRunAt)}</p>
+        <p>Last quiz window: {formatDate(snapshot?.daemon.lastQuizRunAt)}</p>
+        <p>Next quiz window: {formatDate(snapshot?.daemon.nextQuizRunAt)}</p>
       </div>
     </aside>
   );
@@ -551,6 +561,9 @@ function AttemptView({ attempt }: { attempt: QuizAttempt }) {
             {attempt.generation.model ? ` (${attempt.generation.model})` : ""}
           </small>
         ) : null}
+        {attempt.sourceSegments?.length ? (
+          <small className="muted">Using {attempt.sourceSegments.length} recent segment(s).</small>
+        ) : null}
         <SourceChips events={attempt.sourceEvents} />
       </div>
     );
@@ -564,6 +577,9 @@ function AttemptView({ attempt }: { attempt: QuizAttempt }) {
           Quiz generation: {attempt.generation.source}
           {attempt.generation.model ? ` (${attempt.generation.model})` : ""}
         </small>
+      ) : null}
+      {attempt.sourceSegments?.length ? (
+        <small className="muted">Built from {attempt.sourceSegments.length} recent activity segment(s).</small>
       ) : null}
       {attempt.questions.map((question, index) => (
         <div className="question-card" key={question.id}>
@@ -580,7 +596,7 @@ function EventList({ events }: { events: CaptureEvent[] }) {
   if (events.length === 0) {
     return (
       <p className="muted">
-        No raw activity captured yet. Enable frontmost window and screen previews, then click Run capture now or wait for
+        No raw activity captured yet. Enable frontmost window or clipboard capture, then click Run capture now or wait for
         the next daemon check.
       </p>
     );
@@ -597,6 +613,33 @@ function EventList({ events }: { events: CaptureEvent[] }) {
           <p>{event.content}</p>
           {event.metadata ? <MetadataView event={event} /> : null}
           <small>Sensitivity: {event.sensitivity}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SegmentList({ segments }: { segments: ActivitySegment[] }) {
+  if (segments.length === 0) {
+    return <p className="muted">No segments stored yet. Mnemonic will group recent events when the next quiz window runs.</p>;
+  }
+
+  return (
+    <div className="event-list">
+      {segments.map((segment) => (
+        <div className="event-card" key={segment.id}>
+          <div>
+            <strong>{segment.title}</strong>
+            <span>{formatDate(segment.windowEndAt)}</span>
+          </div>
+          <p>{segment.summary}</p>
+          <div style={{ display: "grid", gap: "8px" }}>
+            <small className="muted">
+              {segment.surfaceType} • {segment.activityKind} • {Math.round(segment.confidence * 100)}%
+            </small>
+            <ContextChips label="Topics" values={segment.topicHints} />
+            <ContextChips label="Entities" values={segment.entities} />
+          </div>
         </div>
       ))}
     </div>

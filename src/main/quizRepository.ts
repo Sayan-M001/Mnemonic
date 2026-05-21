@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CaptureEvent, CaptureSettings, QuizAttempt } from "../shared/types.js";
+import type { ActivitySegment, CaptureEvent, CaptureSettings, QuizAttempt } from "../shared/types.js";
 
 export interface QuizRepository {
   addEvent(event: CaptureEvent): Promise<void>;
   listRecentEvents(limit: number): Promise<CaptureEvent[]>;
+  saveSegments(segments: ActivitySegment[]): Promise<void>;
+  listRecentSegments(limit: number): Promise<ActivitySegment[]>;
   saveAttempt(attempt: QuizAttempt): Promise<void>;
   getLatestAttempt(): Promise<QuizAttempt | null>;
   getSettings(): Promise<CaptureSettings>;
@@ -14,6 +16,7 @@ export interface QuizRepository {
 
 type StoreFile = {
   events: CaptureEvent[];
+  segments: ActivitySegment[];
   attempts: QuizAttempt[];
   settings: CaptureSettings;
 };
@@ -42,6 +45,22 @@ export class LocalJsonQuizRepository implements QuizRepository {
   async listRecentEvents(limit: number) {
     const store = await this.readStore();
     return this.filterRetainedEvents(store.events, store.settings.retentionDays).slice(0, limit);
+  }
+
+  async saveSegments(segments: ActivitySegment[]) {
+    if (segments.length === 0) {
+      return;
+    }
+
+    const store = await this.readStore();
+    const retainedSegments = this.filterRetainedSegments(store.segments, store.settings.retentionDays);
+    store.segments = [...segments, ...retainedSegments].slice(0, 500);
+    await this.writeStore(store);
+  }
+
+  async listRecentSegments(limit: number) {
+    const store = await this.readStore();
+    return this.filterRetainedSegments(store.segments, store.settings.retentionDays).slice(0, limit);
   }
 
   async saveAttempt(attempt: QuizAttempt) {
@@ -77,6 +96,7 @@ export class LocalJsonQuizRepository implements QuizRepository {
 
       return {
         events: parsed.events ?? [],
+        segments: parsed.segments ?? [],
         attempts: parsed.attempts ?? [],
         settings: normalizeSettings(parsed.settings)
       };
@@ -102,6 +122,7 @@ export class LocalJsonQuizRepository implements QuizRepository {
   private createEmptyStore(): StoreFile {
     return {
       events: [],
+      segments: [],
       attempts: [],
       settings: defaultCaptureSettings
     };
@@ -112,24 +133,33 @@ export class LocalJsonQuizRepository implements QuizRepository {
     return events.filter((event) => new Date(event.capturedAt).getTime() >= cutoff);
   }
 
+  private filterRetainedSegments(segments: ActivitySegment[], retentionDays: number) {
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    return segments.filter((segment) => new Date(segment.windowEndAt).getTime() >= cutoff);
+  }
+
   private async parseStoreFile(raw: string): Promise<Partial<StoreFile>> {
     try {
       return JSON.parse(raw) as Partial<StoreFile>;
     } catch (error) {
       const repaired = tryRepairStoreJson(raw, error);
-      if (!repaired) {
-        throw error;
+      await this.backupCorruptedStore(raw);
+
+      if (repaired) {
+        const repairedStore = {
+          events: repaired.events ?? [],
+          segments: repaired.segments ?? [],
+          attempts: repaired.attempts ?? [],
+          settings: normalizeSettings(repaired.settings)
+        };
+
+        await this.writeStore(repairedStore);
+        return repairedStore;
       }
 
-      const repairedStore = {
-        events: repaired.events ?? [],
-        attempts: repaired.attempts ?? [],
-        settings: normalizeSettings(repaired.settings)
-      };
-
-      await this.backupCorruptedStore(raw);
-      await this.writeStore(repairedStore);
-      return repairedStore;
+      const emptyStore = this.createEmptyStore();
+      await this.writeStore(emptyStore);
+      return emptyStore;
     }
   }
 
@@ -170,9 +200,22 @@ function tryRepairStoreJson(raw: string, error: unknown): Partial<StoreFile> | n
     try {
       return JSON.parse(candidate) as Partial<StoreFile>;
     } catch {
-      return null;
+      // Fall through to sanitization.
+    }
+  }
+
+  const sanitized = sanitizeControlCharacters(raw);
+  if (sanitized !== raw) {
+    try {
+      return JSON.parse(sanitized) as Partial<StoreFile>;
+    } catch {
+      // Fall through.
     }
   }
 
   return null;
+}
+
+function sanitizeControlCharacters(raw: string) {
+  return raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
 }

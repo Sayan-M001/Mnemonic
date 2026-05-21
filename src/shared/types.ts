@@ -59,6 +59,24 @@ export type StructuredContext = {
   interpreter: InterpreterInfo;
 };
 
+export type ActivitySegment = {
+  id: string;
+  createdAt: string;
+  windowStartAt: string;
+  windowEndAt: string;
+  title: string;
+  surfaceType: string;
+  activityKind: string;
+  summary: string;
+  entities: string[];
+  subjects: string[];
+  topicHints: string[];
+  evidence: string[];
+  sourceEventIds: string[];
+  confidence: number;
+  generation: InterpreterInfo;
+};
+
 export type OCRTextBlock = {
   text: string;
   x: number;
@@ -89,6 +107,7 @@ export type QuizQuestion = {
   question: string;
   answer: string;
   sourceEventIds: string[];
+  sourceSegmentIds?: string[];
 };
 
 export type QuizAttempt = {
@@ -97,6 +116,7 @@ export type QuizAttempt = {
   createdAt: string;
   reason: string;
   sourceEvents: CaptureEvent[];
+  sourceSegments?: ActivitySegment[];
   questions: QuizQuestion[];
   generation?: InterpreterInfo;
 };
@@ -104,6 +124,7 @@ export type QuizAttempt = {
 export type DebugSnapshot = {
   latestAttempt: QuizAttempt | null;
   events: CaptureEvent[];
+  segments: ActivitySegment[];
   settings: CaptureSettings;
   permissions: PermissionSnapshot;
   daemon: {
@@ -111,6 +132,9 @@ export type DebugSnapshot = {
     lastRunAt: string | null;
     nextRunAt: string | null;
     intervalMs: number;
+    quizIntervalMs: number;
+    lastQuizRunAt: string | null;
+    nextQuizRunAt: string | null;
     dataPath: string;
   };
 };

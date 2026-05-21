@@ -139,10 +139,9 @@ app.whenReady().then(async () => {
   daemon.start();
 });
 
-app.on("window-all-closed", (event) => {
-  // Prevent Electron from quitting when the last window is closed,
-  // allowing the background daemon to keep running.
-  event.preventDefault();
+app.on("window-all-closed", () => {
+  // By subscribing to this event and NOT calling app.quit(),
+  // we prevent Electron from quitting, keeping the daemon alive in the background.
   debugWindow = null;
 });
 

@@ -81,8 +81,8 @@ async function createDebugWindow() {
   return debugWindow;
 }
 
-function createTray() {
-  const trayIcon = createTrayIcon();
+async function createTray() {
+  const trayIcon = await createTrayIcon();
   tray = new Tray(trayIcon);
   tray.setToolTip("Mnemonic is running in the background");
   
@@ -134,7 +134,7 @@ ipcMain.handle("asset:open-image", async (_event, imagePath: string) => {
 });
 
 app.whenReady().then(async () => {
-  createTray();
+  await createTray();
   await createDebugWindow();
   daemon.start();
 });
@@ -153,7 +153,7 @@ app.on("before-quit", () => {
   daemon.stop();
 });
 
-function createTrayIcon() {
+async function createTrayIcon() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
       <rect width="32" height="32" rx="8" fill="#1c1712"/>
@@ -162,8 +162,40 @@ function createTrayIcon() {
     </svg>
   `;
 
-  const img = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
-  return img.resize({ width: 18, height: 18 });
+  const tempWindow = new BrowserWindow({
+    width: 32,
+    height: 32,
+    show: false,
+    frame: false,
+    transparent: true,
+    webPreferences: {
+      offscreen: true
+    }
+  });
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <body style="margin:0;padding:0;overflow:hidden;background:transparent;width:32px;height:32px;display:flex;align-items:center;justify-content:center;">
+        ${svg}
+      </body>
+    </html>
+  `;
+
+  await tempWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+  // Wait a small moment to ensure standard rendering layout completes
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const captured = await tempWindow.webContents.capturePage({
+    x: 0,
+    y: 0,
+    width: 32,
+    height: 32
+  });
+
+  tempWindow.destroy();
+  return captured.resize({ width: 18, height: 18 });
 }
 
 function resolveIntervalMs({

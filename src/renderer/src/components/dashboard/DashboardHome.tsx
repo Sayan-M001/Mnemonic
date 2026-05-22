@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import type { DebugSnapshot, CaptureEvent } from "../../../../shared/types";
 import type { TabId } from "./Sidebar";
 
+import type { CaptureSettings } from "../../../../shared/types";
+
 interface DashboardHomeProps {
   snapshot: DebugSnapshot | null;
   onTabChange: (tab: TabId) => void;
-  runCaptureNow: () => Promise<void>;
+  updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   actionMessage: string | null;
   actionError: string | null;
 }
@@ -13,25 +15,14 @@ interface DashboardHomeProps {
 export function DashboardHome({
   snapshot,
   onTabChange,
-  runCaptureNow,
+  updateSettings,
   actionMessage,
   actionError
 }: DashboardHomeProps) {
-  const [isCapturing, setIsCapturing] = useState(false);
-
   const attempt = snapshot?.latestAttempt ?? null;
   const events = snapshot?.events ?? [];
   const segments = snapshot?.segments ?? [];
   const isReady = attempt?.status === "quiz_ready";
-
-  const handleCapture = async () => {
-    setIsCapturing(true);
-    try {
-      await runCaptureNow();
-    } finally {
-      setIsCapturing(false);
-    }
-  };
 
   // Extract unique active apps from recent events for the timeline
   const timelineEvents = events
@@ -138,29 +129,62 @@ export function DashboardHome({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCapture}
-            disabled={isCapturing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 disabled:opacity-50 text-white text-xs font-extrabold cursor-pointer border border-white/5 shadow-sm transition-all"
-          >
-            {isCapturing ? (
-              <>
-                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <span>Capturing...</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                </svg>
-                <span>Run capture</span>
-              </>
-            )}
-          </button>
+        <div className="flex items-center gap-3">
+          {(() => {
+            const hasPermissions = snapshot?.permissions.accessibility === "granted" && snapshot?.permissions.screen === "granted";
+            const isPaused = snapshot?.settings.capturePaused;
+
+            if (!hasPermissions) {
+              return (
+                <div className="flex items-center gap-1.5 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg text-rose-400 text-xs font-bold shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span>Permissions Missing</span>
+                </div>
+              );
+            }
+
+            return (
+              <div className="flex items-center gap-3">
+                {isPaused ? (
+                  <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg text-amber-400 text-xs font-bold shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    <span>Capture Paused</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-bold shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Capturing Active</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ capturePaused: !isPaused })}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer shadow-sm border ${
+                    isPaused
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25"
+                      : "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/25"
+                  }`}
+                >
+                  {isPaused ? (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                      </svg>
+                      <span>Resume Capture</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+                      </svg>
+                      <span>Pause Capture</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </header>
 

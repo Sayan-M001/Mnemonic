@@ -12,12 +12,12 @@ type AISegmentPayload = {
     subjects?: string[];
     topicHints?: string[];
     evidence?: string[];
-    sourceEventIds: string[];
+    sourceEventIndices: number[];
     confidence?: number;
   }>;
 };
 
-const PROMPT_VERSION = "ai-segmentation-v1";
+const PROMPT_VERSION = "ai-segmentation-v2";
 
 export async function generateSegmentsWithAI(events: CaptureEvent[]): Promise<ActivitySegment[]> {
   const usefulEvents = events
@@ -32,7 +32,7 @@ export async function generateSegmentsWithAI(events: CaptureEvent[]): Promise<Ac
     const { data, model } = await requestJsonFromModel<AISegmentPayload>({
       systemPrompt: buildSystemPrompt(),
       userPrompt: buildUserPrompt(usefulEvents),
-      maxOutputTokens: 2200
+      maxOutputTokens: 4000
     });
 
     return normalizeSegments(data, usefulEvents, model);
@@ -48,13 +48,14 @@ function buildSystemPrompt() {
     "Read the ordered event list and group consecutive related events into a small number of coherent activity segments.",
     "Prefer grouping by sustained task, surface, and topic rather than by single-event noise.",
     "Use open-ended surfaceType and activityKind labels.",
+    "Do NOT return any event ID strings or 'sourceEventIds'. Instead, use the event index from the input list.",
     "Return only valid JSON with a top-level segments array."
   ].join(" ");
 }
 
 function buildUserPrompt(events: CaptureEvent[]) {
-  const payload = events.map((event) => ({
-    id: event.id,
+  const payload = events.map((event, index) => ({
+    index,
     capturedAt: event.capturedAt,
     source: event.source,
     appName: event.metadata?.appName ?? null,
@@ -66,29 +67,31 @@ function buildUserPrompt(events: CaptureEvent[]) {
 
   return [
     "Return JSON with a `segments` array.",
-    "Each segment must include: title, surfaceType, activityKind, summary, sourceEventIds.",
+    "Each segment must include: title, surfaceType, activityKind, summary, sourceEventIndices.",
     "Optional keys: entities, subjects, topicHints, evidence, confidence.",
-    "Only use sourceEventIds from the provided events.",
+    "sourceEventIndices must be an array of integers representing the 0-based indices of the events in the input list that belong to this segment.",
+    "Do NOT output sourceEventIds anywhere in the JSON.",
     "Events:",
     JSON.stringify(payload, null, 2)
   ].join("\n");
 }
 
 function normalizeSegments(payload: AISegmentPayload, events: CaptureEvent[], model: string): ActivitySegment[] {
-  const byId = new Map(events.map((event) => [event.id, event]));
   const rawSegments = Array.isArray(payload.segments) ? payload.segments : [];
 
   const segments = rawSegments
     .map((segment) => {
-      const sourceEventIds = Array.isArray(segment.sourceEventIds)
-        ? unique(segment.sourceEventIds.filter((id): id is string => typeof id === "string" && byId.has(id)))
+      const sourceEventIndices = Array.isArray(segment.sourceEventIndices)
+        ? segment.sourceEventIndices.filter((idx): idx is number => typeof idx === "number" && idx >= 0 && idx < events.length)
         : [];
 
-      if (sourceEventIds.length === 0) {
+      if (sourceEventIndices.length === 0) {
         return null;
       }
 
-      const sourceEvents = sourceEventIds.map((id) => byId.get(id)!).sort(sortByCapturedAt);
+      const sourceEvents = sourceEventIndices.map((idx) => events[idx]).sort(sortByCapturedAt);
+      const sourceEventIds = sourceEvents.map((e) => e.id);
+
       return buildSegment({
         title: typeof segment.title === "string" && segment.title.trim() ? segment.title.trim() : sourceEvents[0].metadata?.windowTitle ?? "Captured activity",
         surfaceType: normalizeLabel(segment.surfaceType, sourceEvents[0].metadata?.structuredContext?.surfaceType ?? "captured_activity"),

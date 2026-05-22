@@ -13,7 +13,6 @@ export function SetupFlow({
   updateSettings,
   requestAccessibilityPermission,
   requestScreenPermission,
-  runCaptureNow,
   openDashboard
 }: {
   snapshot: DebugSnapshot | null;
@@ -25,7 +24,6 @@ export function SetupFlow({
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
   requestScreenPermission: () => Promise<void>;
-  runCaptureNow: () => Promise<void>;
   openDashboard: () => void;
 }) {
   const steps = ["Hello", "Consent", "Done"];
@@ -103,7 +101,6 @@ export function SetupFlow({
                 updateSettings={updateSettings}
                 requestAccessibilityPermission={requestAccessibilityPermission}
                 requestScreenPermission={requestScreenPermission}
-                runCaptureNow={runCaptureNow}
                 next={() => setStep(2)}
               />
             ) : (

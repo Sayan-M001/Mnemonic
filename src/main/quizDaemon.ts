@@ -18,6 +18,7 @@ type DaemonOptions = {
 
 export class QuizDaemon {
   private interval: NodeJS.Timeout | null = null;
+  private started = false;
   private lastRunAt: string | null = null;
   private nextRunAt: string | null = null;
   private readonly intervalMs: number;
@@ -33,23 +34,33 @@ export class QuizDaemon {
   }
 
   start() {
-    if (this.interval) {
+    if (this.started) {
       return;
     }
 
-    void this.runNow();
-    this.interval = setInterval(() => void this.runOnce(), this.intervalMs);
+    this.started = true;
     this.scheduleNextRun();
+    this.interval = setTimeout(() => {
+      this.interval = null;
+      void this.runOnce();
+    }, this.intervalMs);
   }
 
   stop() {
-    if (!this.interval) {
+    if (!this.started) {
       return;
     }
 
-    clearInterval(this.interval);
+    this.started = false;
+    if (this.interval) {
+      clearTimeout(this.interval);
+    }
     this.interval = null;
     this.nextRunAt = null;
+  }
+
+  async forceQuizCycle() {
+    await this.runOnce({ forceQuiz: true });
   }
 
   async getSnapshot(): Promise<DebugSnapshot> {
@@ -60,7 +71,7 @@ export class QuizDaemon {
       settings: await this.options.repository.getSettings(),
       permissions: await getPermissionSnapshot(),
       daemon: {
-        running: Boolean(this.interval),
+        running: this.started,
         lastRunAt: this.lastRunAt,
         nextRunAt: this.nextRunAt,
         intervalMs: this.intervalMs,
@@ -72,10 +83,6 @@ export class QuizDaemon {
     };
   }
 
-  async runNow() {
-    await this.runOnce({ forceQuiz: true });
-    return this.getSnapshot();
-  }
 
   async updateSettings(settings: CaptureSettings) {
     await this.options.repository.saveSettings(settings);
@@ -109,15 +116,15 @@ export class QuizDaemon {
       }
 
       if (this.shouldRunQuiz(forceQuiz)) {
-        await this.runQuizCycle(settings);
+        await this.runQuizCycle(settings, forceQuiz);
       }
 
       await this.broadcastSnapshot();
-      this.scheduleNextRun();
     } catch (error) {
       console.error("QuizDaemon runOnce failed:", error);
     } finally {
       this.isRunning = false;
+      this.scheduleFollowingRun();
     }
   }
 
@@ -133,6 +140,23 @@ export class QuizDaemon {
       : new Date(Date.now() + this.quizIntervalMs).toISOString();
   }
 
+  private scheduleFollowingRun() {
+    if (!this.started) {
+      return;
+    }
+
+    if (this.interval) {
+      clearTimeout(this.interval);
+      this.interval = null;
+    }
+
+    this.scheduleNextRun();
+    this.interval = setTimeout(() => {
+      this.interval = null;
+      void this.runOnce();
+    }, this.intervalMs);
+  }
+
   private shouldRunQuiz(forceQuiz: boolean) {
     if (forceQuiz) {
       return true;
@@ -145,11 +169,25 @@ export class QuizDaemon {
     return Date.now() - new Date(this.lastQuizRunAt).getTime() >= this.quizIntervalMs;
   }
 
-  private async runQuizCycle(settings: CaptureSettings) {
+  private async runQuizCycle(settings: CaptureSettings, forceQuiz: boolean) {
     try {
       this.lastQuizRunAt = new Date().toISOString();
       const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(500);
       const latestAttempt = await this.options.repository.getLatestAttempt();
+
+      if (!forceQuiz && latestAttempt) {
+        const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
+        const latestAttemptTime = new Date(latestAttempt.createdAt).getTime();
+        const hasNewEvents = windowEvents.some(
+          (event) => new Date(event.capturedAt).getTime() > latestAttemptTime
+        );
+
+        if (!hasNewEvents) {
+          console.log(`[QuizDaemon] Skipping quiz cycle: No new events captured since the latest attempt at ${latestAttempt.createdAt}.`);
+          return;
+        }
+      }
+
       const attempt = hasAnyCaptureSourceEnabled(settings)
         ? await this.generateAttemptFromCurrentWindow(events)
         : {

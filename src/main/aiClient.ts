@@ -73,10 +73,15 @@ export async function requestJsonFromModel<T>({
     throw new Error("Model returned no text output.");
   }
 
-  return {
-    data: JSON.parse(text) as T,
-    model: config.model
-  };
+  try {
+    return {
+      data: JSON.parse(text) as T,
+      model: config.model
+    };
+  } catch (error) {
+    console.error("Failed to parse JSON response from AI model. Raw text was:\n", text);
+    throw new Error(`JSON parsing failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function extractOutputText(payload: JsonObject): string {

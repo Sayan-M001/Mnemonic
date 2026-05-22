@@ -3,9 +3,9 @@ import type { CaptureSettings, DebugSnapshot, PermissionSnapshot } from "../shar
 
 const api = {
   getSnapshot: () => ipcRenderer.invoke("debug:get-snapshot") as Promise<DebugSnapshot>,
+  forceQuizCycle: () => ipcRenderer.invoke("quiz:force-generate") as Promise<void>,
   updateSettings: (settings: CaptureSettings) => ipcRenderer.invoke("settings:update", settings) as Promise<void>,
   clearLocalData: () => ipcRenderer.invoke("data:clear-local") as Promise<void>,
-  runNow: () => ipcRenderer.invoke("daemon:run-now") as Promise<DebugSnapshot>,
   getPermissions: () => ipcRenderer.invoke("permissions:get") as Promise<PermissionSnapshot>,
   requestScreenPermission: () => ipcRenderer.invoke("permissions:request-screen") as Promise<PermissionSnapshot>,
   requestMicrophonePermission: () =>

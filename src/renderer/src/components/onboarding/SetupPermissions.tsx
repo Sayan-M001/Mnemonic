@@ -8,7 +8,6 @@ export function SetupPermissions({
   settings,
   requestAccessibilityPermission,
   requestScreenPermission,
-  runCaptureNow,
   next
 }: {
   actionError: string | null;
@@ -18,7 +17,6 @@ export function SetupPermissions({
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
   requestScreenPermission: () => Promise<void>;
-  runCaptureNow: () => Promise<void>;
   next: () => void;
 }) {
   if (!settings) {
@@ -46,13 +44,6 @@ export function SetupPermissions({
       />
 
       <div className="flex items-center gap-3 mt-1">
-        <button 
-          className="px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-[#1c1712] text-xs font-bold transition-all active:scale-98 cursor-pointer" 
-          type="button" 
-          onClick={runCaptureNow}
-        >
-          Run capture now
-        </button>
         <button 
           type="button" 
           onClick={next}

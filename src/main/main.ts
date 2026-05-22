@@ -116,10 +116,6 @@ async function createTray() {
         click: () => void createDebugWindow()
       },
       {
-        label: "Run Quiz Check Now",
-        click: () => void daemon.runNow()
-      },
-      {
         label: "Quit",
         click: () => app.quit()
       }
@@ -128,9 +124,9 @@ async function createTray() {
 }
 
 ipcMain.handle("debug:get-snapshot", () => daemon.getSnapshot());
+ipcMain.handle("quiz:force-generate", () => daemon.forceQuizCycle());
 ipcMain.handle("settings:update", (_event, settings: CaptureSettings) => daemon.updateSettings(settings));
 ipcMain.handle("data:clear-local", () => daemon.clearLocalData());
-ipcMain.handle("daemon:run-now", () => daemon.runNow());
 ipcMain.handle("permissions:get", () => getPermissionSnapshot());
 ipcMain.handle("permissions:request-screen", () => requestScreenPermission());
 ipcMain.handle("permissions:request-microphone", () => requestMicrophonePermission());

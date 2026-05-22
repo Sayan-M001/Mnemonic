@@ -53,6 +53,21 @@ export function ActivityStream({ snapshot }: ActivityStreamProps) {
     });
   };
 
+  const formatSegmentTimeRange = (start?: string | null, end?: string | null) => {
+    if (!start && !end) {
+      return "--:--:--";
+    }
+
+    const startLabel = formatDate(start);
+    const endLabel = formatDate(end);
+
+    if (!start || !end || start === end) {
+      return startLabel;
+    }
+
+    return `${startLabel} - ${endLabel}`;
+  };
+
   return (
     <div className="flex-1 flex flex-col p-8 overflow-hidden max-h-full">
       {/* View Header */}
@@ -131,7 +146,7 @@ export function ActivityStream({ snapshot }: ActivityStreamProps) {
                 No Activity Segments
               </span>
               <p className="text-[10px] text-neutral-600 max-w-sm mt-1 px-4">
-                Segments group related events over 15-minute cycles. Let the daemon run or click "Run capture" in the dashboard.
+                Segments group related events over the current quiz window. Keep Mnemonic active to automatically build context.
               </p>
             </div>
           ) : (
@@ -152,7 +167,7 @@ export function ActivityStream({ snapshot }: ActivityStreamProps) {
                           Segment
                         </span>
                         <span className="text-[10px] text-neutral-500 font-bold">
-                          {getLocalDate(segment.windowEndAt)} • {formatDate(segment.windowStartAt)} - {formatDate(segment.windowEndAt)}
+                          {getLocalDate(segment.windowEndAt)} • {formatSegmentTimeRange(segment.windowStartAt, segment.windowEndAt)}
                         </span>
                       </div>
                       <h3 className="text-sm font-bold text-white mt-2 font-serif">
@@ -227,7 +242,7 @@ export function ActivityStream({ snapshot }: ActivityStreamProps) {
                 No Raw Captures
               </span>
               <p className="text-[10px] text-neutral-600 max-w-sm mt-1 px-4">
-                No screenshot or clipboard events logged. Enable sources in settings and wait or click capture!
+                No screenshot or clipboard events logged. Enable sources in settings and let the background daemon build context.
               </p>
             </div>
           ) : (

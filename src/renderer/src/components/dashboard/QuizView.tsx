@@ -17,8 +17,23 @@ export function QuizView({ snapshot }: QuizViewProps) {
 
 // Blocked screen when not enough segments or generation fails
 function QuizBlockedView({ attempt, snapshot }: { attempt: QuizAttempt | null; snapshot: DebugSnapshot | null }) {
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const events = attempt?.sourceEvents ?? [];
   const segments = attempt?.sourceSegments ?? [];
+
+  const handleForceGenerate = async () => {
+    setIsRegenerating(true);
+    setErrorMsg(null);
+    try {
+      await window.mnemonic.forceQuizCycle();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to force quiz generation");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col p-8 overflow-y-auto max-h-full items-center justify-center select-text">
@@ -47,6 +62,36 @@ function QuizBlockedView({ attempt, snapshot }: { attempt: QuizAttempt | null; s
               <span className="text-rose-400">Blocked</span>
             </div>
           </div>
+        )}
+
+        <button
+          type="button"
+          disabled={isRegenerating}
+          onClick={handleForceGenerate}
+          className="w-full py-2.5 px-4 rounded-xl text-xs font-black cursor-pointer text-center bg-[#eb7f4b] text-white hover:opacity-95 shadow-md shadow-[#eb7f4b]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
+          {isRegenerating ? (
+            <>
+              <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Generating Quiz...</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              <span>Generate Quiz Now</span>
+            </>
+          )}
+        </button>
+
+        {errorMsg && (
+          <p className="text-rose-400 text-[10px] font-bold mt-1 text-center">
+            {errorMsg}
+          </p>
         )}
 
         {(segments.length > 0 || events.length > 0) && (
@@ -90,7 +135,7 @@ function QuizBlockedView({ attempt, snapshot }: { attempt: QuizAttempt | null; s
 // Active quiz taking flow
 function ActiveQuizSession({ attempt, snapshot }: { attempt: QuizAttempt; snapshot: DebugSnapshot | null }) {
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [answersState, setAnswersState] = useState<Record<string, { typedAnswer: string; revealed: boolean; correct?: boolean }>>({});
+  const [answersState, setAnswersState] = useState<Record<string, { selectedOption: string | null; correct: boolean }>>({});
   const [showDrawer, setShowDrawer] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
 
@@ -105,30 +150,18 @@ function ActiveQuizSession({ attempt, snapshot }: { attempt: QuizAttempt; snapsh
     setQuizFinished(false);
   }, [attempt.id]);
 
-  const handleReveal = () => {
+  const handleSelectOption = (option: string) => {
     const qId = currentQuestion.id;
+    if (answersState[qId]) return;
+
+    const correct = option.trim() === currentQuestion.answer.trim();
     setAnswersState((prev) => ({
       ...prev,
-      [qId]: { ...prev[qId], revealed: true, typedAnswer: prev[qId]?.typedAnswer || "" }
+      [qId]: { selectedOption: option, correct }
     }));
   };
 
-  const handleTypeAnswer = (val: string) => {
-    const qId = currentQuestion.id;
-    if (answersState[qId]?.revealed) return;
-    setAnswersState((prev) => ({
-      ...prev,
-      [qId]: { ...prev[qId], typedAnswer: val, revealed: false }
-    }));
-  };
-
-  const handleGrade = (correct: boolean) => {
-    const qId = currentQuestion.id;
-    setAnswersState((prev) => ({
-      ...prev,
-      [qId]: { ...prev[qId], correct }
-    }));
-
+  const handleNext = () => {
     if (currentIdx < questions.length - 1) {
       setCurrentIdx((prev) => prev + 1);
     } else {
@@ -136,7 +169,15 @@ function ActiveQuizSession({ attempt, snapshot }: { attempt: QuizAttempt; snapsh
     }
   };
 
-  const currentAnswerState = answersState[currentQuestion.id] || { typedAnswer: "", revealed: false };
+  const currentAnswerState = answersState[currentQuestion.id] || null;
+  const hasSelected = currentAnswerState !== null;
+
+  const currentOptions = currentQuestion.options || [
+    currentQuestion.answer,
+    "Alternative choice A",
+    "Alternative choice B",
+    "Alternative choice C"
+  ];
 
   // Calculate overall performance
   const correctCount = Object.values(answersState).filter((a) => a.correct === true).length;
@@ -241,61 +282,69 @@ function ActiveQuizSession({ attempt, snapshot }: { attempt: QuizAttempt; snapsh
               {currentQuestion.question}
             </h3>
 
-            {/* Answer typing area */}
-            <div className="mt-6">
-              <label htmlFor="user-guess-answer" className="text-[10px] text-neutral-500 font-extrabold uppercase tracking-wider block mb-2">
-                Your guess
-              </label>
-              <textarea
-                id="user-guess-answer"
-                placeholder="Recall the details and type your answer here..."
-                value={currentAnswerState.typedAnswer}
-                onChange={(e) => handleTypeAnswer(e.target.value)}
-                disabled={currentAnswerState.revealed}
-                className="w-full bg-neutral-900 border border-white/5 rounded-2xl p-4 text-xs text-white placeholder-neutral-500 outline-none focus:border-[#eb7f4b]/20 transition-all font-medium min-h-[90px] resize-none"
-              />
-            </div>
+            {/* MCQ Options grid */}
+            <div className="mt-8 space-y-3">
+              <span className="text-[10px] text-neutral-500 font-extrabold uppercase tracking-wider block mb-1">
+                Choose the correct answer
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {currentOptions.map((option) => {
+                  const isSelected = currentAnswerState?.selectedOption === option;
+                  const isCorrectAnswer = option.trim() === currentQuestion.answer.trim();
+                  
+                  let btnStyle = "w-full bg-white/[0.015] border border-white/5 hover:border-white/15 hover:bg-white/[0.04] text-neutral-300 hover:text-white";
+                  let icon = null;
 
-            {/* Revealed answer panel */}
-            {currentAnswerState.revealed && (
-              <div className="mt-5 p-4 bg-[#39706f]/10 border border-[#39706f]/20 rounded-2xl select-text animate-fade-in">
-                <span className="text-[9px] font-black text-[#39706f] uppercase tracking-wider block">
-                  Correct Answer
-                </span>
-                <p className="text-xs text-neutral-200 mt-1 font-semibold leading-relaxed">
-                  {currentQuestion.answer}
-                </p>
+                  if (hasSelected) {
+                    if (isCorrectAnswer) {
+                      btnStyle = "w-full bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold";
+                      icon = (
+                        <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      );
+                    } else if (isSelected) {
+                      btnStyle = "w-full bg-rose-500/10 border-rose-500/30 text-rose-400 font-bold";
+                      icon = (
+                        <svg className="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      );
+                    } else {
+                      btnStyle = "w-full bg-neutral-900/30 border-white/[0.02] text-neutral-500 opacity-40 cursor-not-allowed";
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      disabled={hasSelected}
+                      onClick={() => handleSelectOption(option)}
+                      className={`p-4 rounded-2xl text-left text-xs font-semibold transition-all flex items-center justify-between gap-3 text-wrap select-text cursor-pointer min-h-[58px] ${btnStyle}`}
+                    >
+                      <span>{option}</span>
+                      {icon}
+                    </button>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
 
           {/* Action Row */}
-          <div className="mt-8 flex gap-3 border-t border-white/5 pt-4">
-            {!currentAnswerState.revealed ? (
+          <div className="mt-8 flex justify-end border-t border-white/5 pt-4 min-h-[44px]">
+            {hasSelected && (
               <button
                 type="button"
-                onClick={handleReveal}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-black cursor-pointer bg-neutral-800 text-white hover:bg-neutral-700/80 shadow border border-white/5"
+                onClick={handleNext}
+                className="py-2.5 px-5 rounded-xl text-xs font-black cursor-pointer bg-[#eb7f4b] text-white hover:opacity-95 shadow-md shadow-[#eb7f4b]/20 flex items-center gap-1.5 animate-fade-in"
               >
-                Reveal Answer
+                <span>{currentIdx < questions.length - 1 ? "Next Question" : "Finish Quiz"}</span>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </button>
-            ) : (
-              <div className="w-full flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleGrade(false)}
-                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-black cursor-pointer bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/25"
-                >
-                  Forgot It
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGrade(true)}
-                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-black cursor-pointer bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/25"
-                >
-                  I Recalled It!
-                </button>
-              </div>
             )}
           </div>
         </section>

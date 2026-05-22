@@ -19,7 +19,13 @@ function App() {
       return;
     }
 
-    window.mnemonic.getSnapshot().then(setSnapshot);
+    window.mnemonic.getSnapshot().then((initialSnapshot) => {
+      setSnapshot(initialSnapshot);
+      const allGranted = initialSnapshot.permissions.accessibility === "granted" && initialSnapshot.permissions.screen === "granted";
+      if (allGranted) {
+        setView("dashboard");
+      }
+    });
     return window.mnemonic.onSnapshotUpdated(setSnapshot);
   }, []);
 
@@ -44,7 +50,7 @@ function App() {
 
     setActionError(null);
     setActionMessage(null);
-    const nextSettings = { ...snapshot.settings, ...patch, capturePaused: false };
+    const nextSettings = { ...snapshot.settings, ...patch };
     setSnapshot({ ...snapshot, settings: nextSettings });
     await window.mnemonic.updateSettings(nextSettings);
   }
@@ -69,25 +75,6 @@ function App() {
     await window.mnemonic.clearLocalData();
   }
 
-  async function runCaptureNow() {
-    setActionError(null);
-    setActionMessage(null);
-
-    try {
-      const beforeIds = new Set((snapshot?.events ?? []).map((event) => event.id));
-      const nextSnapshot = await window.mnemonic.runNow();
-      setSnapshot(nextSnapshot);
-      const capturedCount = nextSnapshot.events.filter((event) => !beforeIds.has(event.id)).length;
-
-      setActionMessage(
-        capturedCount > 0
-          ? `Captured ${capturedCount} new item${capturedCount === 1 ? "" : "s"}.`
-          : "Capture ran, but no new non-duplicate data was found."
-      );
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Capture failed.");
-    }
-  }
 
   const attempt = snapshot?.latestAttempt ?? null;
   const settings = snapshot?.settings ?? null;
@@ -116,7 +103,6 @@ function App() {
         updateSettings={updateSettings}
         requestAccessibilityPermission={requestAccessibilityPermission}
         requestScreenPermission={requestScreenPermission}
-        runCaptureNow={runCaptureNow}
         openDashboard={() => setView("dashboard")}
       />
     );
@@ -127,7 +113,6 @@ function App() {
       snapshot={snapshot}
       settings={settings}
       attempt={attempt}
-      runCaptureNow={runCaptureNow}
       updateSettings={updateSettings}
       requestAccessibilityPermission={requestAccessibilityPermission}
       requestScreenPermission={requestScreenPermission}

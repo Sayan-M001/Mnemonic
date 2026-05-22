@@ -10,7 +10,6 @@ interface DashboardLayoutProps {
   snapshot: DebugSnapshot | null;
   settings: CaptureSettings | null;
   attempt: QuizAttempt | null;
-  runCaptureNow: () => Promise<void>;
   updateSettings: (patch: Partial<CaptureSettings>) => Promise<void>;
   requestAccessibilityPermission: () => Promise<void>;
   requestScreenPermission: () => Promise<void>;
@@ -24,7 +23,6 @@ export function DashboardLayout({
   snapshot,
   settings,
   attempt,
-  runCaptureNow,
   updateSettings,
   requestAccessibilityPermission,
   requestScreenPermission,
@@ -62,7 +60,7 @@ export function DashboardLayout({
             <DashboardHome
               snapshot={snapshot}
               onTabChange={handleTabChange}
-              runCaptureNow={runCaptureNow}
+              updateSettings={updateSettings}
               actionMessage={actionMessage}
               actionError={actionError}
             />

@@ -106,6 +106,7 @@ export type QuizQuestion = {
   id: string;
   question: string;
   answer: string;
+  options?: string[];
   sourceEventIds: string[];
   sourceSegmentIds?: string[];
 };

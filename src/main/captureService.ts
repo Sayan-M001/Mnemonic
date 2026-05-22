@@ -146,9 +146,6 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       const urlStr = activeWindow.url ? ` (${activeWindow.url})` : "";
       contentParts.push(`browser tab "${tabName}"${urlStr}`);
     }
-    if (activeWindow.uiText) {
-      contentParts.push(`\nVisible text:\n${activeWindow.uiText}`);
-    }
 
     const screenshotPath = await captureWindowPreview({
       appName,
@@ -158,7 +155,7 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
     const ocrResult = screenshotPath ? await extractTextFromImage(screenshotPath) : null;
     const ocrText = normalizeOCRText(ocrResult?.fullText);
 
-    if (ocrText && ocrText !== activeWindow.uiText) {
+    if (ocrText) {
       contentParts.push(`\nOCR text:\n${ocrText}`);
     }
 
@@ -173,7 +170,6 @@ async function collectWindowSourceEvent(captureAssetsDir: string): Promise<Captu
       windowTitle,
       url: activeWindow.url,
       tabTitle: activeWindow.tabTitle,
-      uiText: sensitivity === "high" ? undefined : activeWindow.uiText,
       screenshotPath,
       ocrText: sensitivity === "high" ? undefined : ocrText,
       ocrBlocks: sensitivity === "high" ? undefined : ocrResult?.blocks,
@@ -308,8 +304,8 @@ async function getAccessibilityStatus(): Promise<PermissionState> {
   }
 
   try {
-    await getActiveWindowViaAppleScript();
-    return "granted";
+    const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
+    return isTrusted ? "granted" : "denied";
   } catch {
     return "denied";
   }
@@ -324,10 +320,13 @@ async function getActiveWindowViaAppleScript(): Promise<{
   windowTitle?: string;
   url?: string;
   tabTitle?: string;
-  uiText?: string;
 } | null> {
   if (process.platform !== "darwin") {
     return { appName: "Unknown" };
+  }
+
+  if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+    return null;
   }
 
   const script = `
@@ -357,71 +356,7 @@ async function getActiveWindowViaAppleScript(): Promise<{
       end try
     end if
 
-    set textItems to {}
-    try
-      tell application "System Events"
-        tell frontApp
-          if (count of windows) > 0 then
-            tell front window
-              try
-                repeat with itemRef in (every static text)
-                  try
-                    set v to value of itemRef as string
-                    if v is not "" and v is not "missing value" then copy v to end of textItems
-                  end try
-                end repeat
-              end try
-              try
-                repeat with itemRef in (every text area)
-                  try
-                    set v to value of itemRef as string
-                    if v is not "" and v is not "missing value" then copy v to end of textItems
-                  end try
-                end repeat
-              end try
-              try
-                repeat with itemRef in (every text field)
-                  try
-                    set v to value of itemRef as string
-                    if v is not "" and v is not "missing value" then copy v to end of textItems
-                  end try
-                end repeat
-              end try
-              try
-                repeat with sa in (every scroll area)
-                  try
-                    repeat with itemRef in (every static text of sa)
-                      try
-                        set v to value of itemRef as string
-                        if v is not "" and v is not "missing value" then copy v to end of textItems
-                      end try
-                    end repeat
-                  end try
-                  try
-                    repeat with itemRef in (every text area of sa)
-                      try
-                        set v to value of itemRef as string
-                        if v is not "" and v is not "missing value" then copy v to end of textItems
-                      end try
-                    end repeat
-                  end try
-                end repeat
-              end try
-            end tell
-          end if
-        end tell
-      end tell
-    end try
-
-    set uiText to ""
-    if (count of textItems) > 0 then
-      set oldDelims to AppleScript's text item delimiters
-      set AppleScript's text item delimiters to linefeed
-      set uiText to textItems as string
-      set AppleScript's text item delimiters to oldDelims
-    end if
-
-    return appName & "__MNEMONIC_SEPARATOR__" & winTitle & "__MNEMONIC_SEPARATOR__" & tabURL & "__MNEMONIC_SEPARATOR__" & tabTitle & "__MNEMONIC_SEPARATOR__" & uiText
+    return appName & "__MNEMONIC_SEPARATOR__" & winTitle & "__MNEMONIC_SEPARATOR__" & tabURL & "__MNEMONIC_SEPARATOR__" & tabTitle
   `;
 
   try {
@@ -431,14 +366,12 @@ async function getActiveWindowViaAppleScript(): Promise<{
     const windowTitle = parts[1] || undefined;
     const url = parts[2] || undefined;
     const tabTitle = parts[3] || undefined;
-    const uiText = parts[4] || undefined;
 
     return {
       appName,
       windowTitle,
       url,
-      tabTitle,
-      uiText
+      tabTitle
     };
   } catch (error) {
     const logPath = "/Users/sayan/Library/Application Support/mnemonic-quiz-daemon/debug.log";

@@ -4,13 +4,18 @@ import type { CaptureSettings, DebugSnapshot } from "../../shared/types";
 import "./styles.css";
 import { SetupFlow } from "./components/onboarding/SetupFlow";
 import { DashboardLayout } from "./components/dashboard/DashboardLayout";
+import { QuizPopup } from "./components/quiz/QuizPopup";
+
+const isQuizPopupView =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("view") === "quiz-popup";
 
 function App() {
   const [snapshot, setSnapshot] = useState<DebugSnapshot | null>(null);
   const [preloadError, setPreloadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [view, setView] = useState<"setup" | "dashboard">("setup");
+  const [view, setView] = useState<"setup" | "dashboard">(isQuizPopupView ? "dashboard" : "setup");
   const [setupStep, setSetupStep] = useState(0);
 
   useEffect(() => {
@@ -22,7 +27,7 @@ function App() {
     window.mnemonic.getSnapshot().then((initialSnapshot) => {
       setSnapshot(initialSnapshot);
       const allGranted = initialSnapshot.permissions.accessibility === "granted" && initialSnapshot.permissions.screen === "granted";
-      if (allGranted) {
+      if (allGranted || isQuizPopupView) {
         setView("dashboard");
       }
     });
@@ -30,7 +35,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!window.mnemonic || view !== "setup") {
+    if (!window.mnemonic || view !== "setup" || isQuizPopupView) {
       return;
     }
 
@@ -106,6 +111,10 @@ function App() {
         openDashboard={() => setView("dashboard")}
       />
     );
+  }
+
+  if (isQuizPopupView) {
+    return <QuizPopup snapshot={snapshot} />;
   }
 
   return (

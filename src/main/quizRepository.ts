@@ -25,7 +25,8 @@ export const defaultCaptureSettings: CaptureSettings = {
   capturePaused: false,
   clipboardEnabled: true,
   activeWindowEnabled: true,
-  retentionDays: 7
+  retentionDays: 7,
+  welcomeNotificationSent: false
 };
 
 export class LocalJsonQuizRepository implements QuizRepository {

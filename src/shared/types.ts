@@ -100,6 +100,7 @@ export type CaptureSettings = {
   clipboardEnabled: boolean;
   activeWindowEnabled: boolean;
   retentionDays: number;
+  welcomeNotificationSent?: boolean;
 };
 
 export type QuizQuestion = {

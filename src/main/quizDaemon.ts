@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification } from "electron";
+import { BrowserWindow, Notification, app } from "electron";
 import { collectEnabledCaptureEvents, getPermissionSnapshot } from "./captureService.js";
 import type { QuizRepository } from "./quizRepository.js";
 import { generateSegmentsWithAI } from "./aiSegmentationService.js";
@@ -14,6 +14,7 @@ type DaemonOptions = {
   quizIntervalMs?: number;
   getDebugWindow: () => BrowserWindow | null;
   openDebugWindow: () => Promise<BrowserWindow>;
+  openQuizPopupWindow: (attemptId: string) => Promise<BrowserWindow>;
 };
 
 export class QuizDaemon {
@@ -23,14 +24,23 @@ export class QuizDaemon {
   private nextRunAt: string | null = null;
   private readonly intervalMs: number;
   private readonly quizIntervalMs: number;
+  private readonly minEventsForQuiz: number;
   private lastQuizRunAt: string | null = null;
   private nextQuizRunAt: string | null = null;
   private lastNotifiedSourceSignature: string | null = null;
   private isRunning = false;
+  private activeNotification: Notification | null = null;
 
   constructor(private readonly options: DaemonOptions) {
     this.intervalMs = options.intervalMs ?? 30_000;
     this.quizIntervalMs = options.quizIntervalMs ?? 60 * 60 * 1000;
+
+    // Calculate expected capture events in a single quiz interval
+    const expectedEvents = Math.floor(this.quizIntervalMs / this.intervalMs);
+
+    // Require active events for at least 10% of the quiz interval,
+    // with a target minimum of 3 events (for 3 questions), but capped at the max possible expected events.
+    this.minEventsForQuiz = Math.max(1, Math.min(expectedEvents, Math.max(3, Math.floor(expectedEvents * 0.10))));
   }
 
   start() {
@@ -59,15 +69,12 @@ export class QuizDaemon {
     this.nextRunAt = null;
   }
 
-  async forceQuizCycle() {
-    await this.runOnce({ forceQuiz: true });
-  }
 
   async getSnapshot(): Promise<DebugSnapshot> {
     return {
       latestAttempt: await this.options.repository.getLatestAttempt(),
-      events: await this.options.repository.listRecentEvents(20),
-      segments: await this.options.repository.listRecentSegments(8),
+      events: await this.options.repository.listRecentEvents(2000),
+      segments: await this.options.repository.listRecentSegments(500),
       settings: await this.options.repository.getSettings(),
       permissions: await getPermissionSnapshot(),
       daemon: {
@@ -98,7 +105,7 @@ export class QuizDaemon {
     await this.broadcastSnapshot();
   }
 
-  private async runOnce({ forceQuiz = false }: { forceQuiz?: boolean } = {}) {
+  private async runOnce() {
     if (this.isRunning) {
       console.warn("QuizDaemon runOnce skipped: already running");
       return;
@@ -115,8 +122,8 @@ export class QuizDaemon {
         await this.options.repository.addEvent(event);
       }
 
-      if (this.shouldRunQuiz(forceQuiz)) {
-        await this.runQuizCycle(settings, forceQuiz);
+      if (this.shouldRunQuiz()) {
+        await this.runQuizCycle(settings);
       }
 
       await this.broadcastSnapshot();
@@ -157,11 +164,7 @@ export class QuizDaemon {
     }, this.intervalMs);
   }
 
-  private shouldRunQuiz(forceQuiz: boolean) {
-    if (forceQuiz) {
-      return true;
-    }
-
+  private shouldRunQuiz() {
     if (!this.lastQuizRunAt) {
       return true;
     }
@@ -169,27 +172,27 @@ export class QuizDaemon {
     return Date.now() - new Date(this.lastQuizRunAt).getTime() >= this.quizIntervalMs;
   }
 
-  private async runQuizCycle(settings: CaptureSettings, forceQuiz: boolean) {
+  private async runQuizCycle(settings: CaptureSettings) {
     try {
       this.lastQuizRunAt = new Date().toISOString();
       const events = settings.capturePaused ? [] : await this.options.repository.listRecentEvents(500);
       const latestAttempt = await this.options.repository.getLatestAttempt();
+      const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
 
-      if (!forceQuiz && latestAttempt) {
-        const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
-        const latestAttemptTime = new Date(latestAttempt.createdAt).getTime();
-        const hasNewEvents = windowEvents.some(
-          (event) => new Date(event.capturedAt).getTime() > latestAttemptTime
-        );
+      const latestAttemptTime = latestAttempt ? new Date(latestAttempt.createdAt).getTime() : 0;
+      const newEvents = windowEvents.filter(
+        (event) => new Date(event.capturedAt).getTime() > latestAttemptTime
+      );
 
-        if (!hasNewEvents) {
-          console.log(`[QuizDaemon] Skipping quiz cycle: No new events captured since the latest attempt at ${latestAttempt.createdAt}.`);
-          return;
-        }
+      if (newEvents.length < this.minEventsForQuiz) {
+        console.log(`[QuizDaemon] Skipping background quiz cycle: Only ${newEvents.length} new events captured (requires at least ${this.minEventsForQuiz}).`);
+        return;
       }
 
+
+
       const attempt = hasAnyCaptureSourceEnabled(settings)
-        ? await this.generateAttemptFromCurrentWindow(events)
+        ? await this.generateAttemptFromCurrentWindow(events, latestAttemptTime)
         : {
             id: randomUUID(),
             status: "blocked" as const,
@@ -212,10 +215,31 @@ export class QuizDaemon {
         .join(":");
       if (attempt.status === "quiz_ready" && sourceSignature !== this.lastNotifiedSourceSignature) {
         this.lastNotifiedSourceSignature = sourceSignature;
-        new Notification({
-          title: "Mnemonic quiz ready",
-          body: `${attempt.questions.length} questions generated from your captured activity.`
-        }).show();
+        console.log("[QuizDaemon] Background quiz ready: sending notification");
+        this.activeNotification = new Notification({
+          title: "Mnemonic Quiz Ready",
+          body: `${attempt.questions.length} recall questions are ready. Click to start your quiz.`
+        });
+        this.activeNotification.on("click", () => {
+          console.log("[Notification] Clicked: opening quiz window");
+          void this.options.openQuizPopupWindow(attempt.id);
+          this.activeNotification = null;
+        });
+        this.activeNotification.on("show", () => {
+          console.log("[Notification] Displayed successfully");
+        });
+        this.activeNotification.on("failed", (event, error) => {
+          console.error("[Notification] Failed to show:", error);
+          console.log("[Notification] Falling back to opening quiz window directly due to notification failure");
+          void this.options.openQuizPopupWindow(attempt.id);
+          this.activeNotification = null;
+        });
+        this.activeNotification.show();
+
+        // macOS Dock bounce alert as backup
+        if (process.platform === "darwin" && app.dock) {
+          app.dock.bounce("informational");
+        }
       }
 
       if (latestAttempt?.id !== attempt.id) {
@@ -226,16 +250,20 @@ export class QuizDaemon {
     }
   }
 
-  private async generateAttemptFromCurrentWindow(events: CaptureEvent[]) {
+  private async generateAttemptFromCurrentWindow(events: CaptureEvent[], latestAttemptTime: number) {
+    const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
+    const newEvents = windowEvents.filter(
+      (event) => new Date(event.capturedAt).getTime() > latestAttemptTime
+    );
+
     try {
-      const windowEvents = selectEventsForCurrentQuizWindow(events, this.quizIntervalMs);
-      const segments = await generateSegmentsWithAI(windowEvents);
+      const segments = await generateSegmentsWithAI(newEvents);
       try {
         await this.options.repository.saveSegments(segments);
       } catch (saveError) {
         console.error("Failed to save segments:", saveError);
       }
-      return await generateQuizAttemptWithAI(windowEvents.length > 0 ? segments : [], windowEvents);
+      return await generateQuizAttemptWithAI(newEvents.length > 0 ? segments : [], newEvents);
     } catch (error) {
       console.error("generateAttemptFromCurrentWindow failed:", error);
       return {
@@ -243,7 +271,7 @@ export class QuizDaemon {
         status: "blocked" as const,
         createdAt: new Date().toISOString(),
         reason: `Failed to generate quiz: ${error instanceof Error ? error.message : String(error)}`,
-        sourceEvents: events.slice(0, 5),
+        sourceEvents: newEvents,
         sourceSegments: [],
         questions: [],
         generation: {

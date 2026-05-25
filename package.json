@@ -8,17 +8,18 @@
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite --host 127.0.0.1",
-    "dev:electron": "wait-on tcp:5173 && npm run build:main && electron .",
+    "dev:sign-electron": "node -e \"if (process.platform === 'darwin') { try { require('child_process').execSync('codesign --force --deep --sign - node_modules/electron/dist/Electron.app'); console.log('Successfully ad-hoc signed Electron.app for macOS notifications development.'); } catch (e) { console.error('Failed to sign Electron.app:', e.message); } }\"",
+    "dev:electron": "wait-on tcp:5173 && npm run build:main && npm run build:preload && npm run dev:sign-electron && electron .",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
     "build:preload": "tsc -p tsconfig.preload.json",
     "build:renderer": "vite build",
+    "package:mac": "npm run build && electron-builder --mac zip",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.0.0",
-    "electron": "^42.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.8.0",
@@ -30,6 +31,31 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
     "tailwindcss": "^4.3.0"
+  },
+  "build": {
+    "appId": "com.mnemonic.quizdaemon",
+    "productName": "Mnemonic",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    }
   }
 }

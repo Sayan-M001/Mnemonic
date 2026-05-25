@@ -311,9 +311,11 @@ async function getAccessibilityStatus(): Promise<PermissionState> {
   }
 }
 
-async function openAccessibilitySettings() {
+export async function openAccessibilitySettings() {
   await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
 }
+
+
 
 async function getActiveWindowViaAppleScript(): Promise<{
   appName: string;

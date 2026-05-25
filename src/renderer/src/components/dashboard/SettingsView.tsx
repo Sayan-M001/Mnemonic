@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DebugSnapshot, CaptureSettings } from "../../../../shared/types";
+import type { CaptureSettings, DebugSnapshot } from "../../../../shared/types";
 
 interface SettingsViewProps {
   snapshot: DebugSnapshot | null;
@@ -48,7 +48,7 @@ export function SettingsView({
   const formatPermissionStatus = (status?: string) => {
     if (status === "granted") return "Granted";
     if (status === "denied") return "Denied (System settings)";
-    if (status === "not-determined") return "Not Requested";
+    if (status === "not-determined" || status === "default") return "Not Requested";
     return status || "Unknown";
   };
 
@@ -152,12 +152,23 @@ export function SettingsView({
                 </span>
               </div>
 
-              {snapshot?.permissions.accessibility !== "granted" && (
+              {snapshot?.permissions.accessibility !== "granted" ? (
                 <button
                   onClick={requestAccessibilityPermission}
                   className="px-3.5 py-1.5 rounded-lg bg-[#eb7f4b] hover:bg-[#b76742] text-white text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-md"
                 >
                   Grant Access
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (window.mnemonic) {
+                      void window.mnemonic.openAccessibilitySettings();
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-white/5 text-neutral-300 text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-md"
+                >
+                  Manage Settings
                 </button>
               )}
             </div>
@@ -176,15 +187,28 @@ export function SettingsView({
                 </span>
               </div>
 
-              {snapshot?.permissions.screen !== "granted" && (
+              {snapshot?.permissions.screen !== "granted" ? (
                 <button
                   onClick={requestScreenPermission}
                   className="px-3.5 py-1.5 rounded-lg bg-[#eb7f4b] hover:bg-[#b76742] text-white text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-md"
                 >
                   Grant Access
                 </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (window.mnemonic) {
+                      void window.mnemonic.openScreenRecordingSettings();
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-white/5 text-neutral-300 text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-md"
+                >
+                  Manage Settings
+                </button>
               )}
             </div>
+
+
           </div>
         </section>
 

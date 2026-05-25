@@ -17,23 +17,8 @@ export function QuizView({ snapshot }: QuizViewProps) {
 
 // Blocked screen when not enough segments or generation fails
 function QuizBlockedView({ attempt, snapshot }: { attempt: QuizAttempt | null; snapshot: DebugSnapshot | null }) {
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
   const events = attempt?.sourceEvents ?? [];
   const segments = attempt?.sourceSegments ?? [];
-
-  const handleForceGenerate = async () => {
-    setIsRegenerating(true);
-    setErrorMsg(null);
-    try {
-      await window.mnemonic.forceQuizCycle();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to force quiz generation");
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
 
   return (
     <div className="flex-1 flex flex-col p-8 overflow-y-auto max-h-full items-center justify-center select-text">
@@ -62,36 +47,6 @@ function QuizBlockedView({ attempt, snapshot }: { attempt: QuizAttempt | null; s
               <span className="text-rose-400">Blocked</span>
             </div>
           </div>
-        )}
-
-        <button
-          type="button"
-          disabled={isRegenerating}
-          onClick={handleForceGenerate}
-          className="w-full py-2.5 px-4 rounded-xl text-xs font-black cursor-pointer text-center bg-[#eb7f4b] text-white hover:opacity-95 shadow-md shadow-[#eb7f4b]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-        >
-          {isRegenerating ? (
-            <>
-              <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <span>Generating Quiz...</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-              <span>Generate Quiz Now</span>
-            </>
-          )}
-        </button>
-
-        {errorMsg && (
-          <p className="text-rose-400 text-[10px] font-bold mt-1 text-center">
-            {errorMsg}
-          </p>
         )}
 
         {(segments.length > 0 || events.length > 0) && (

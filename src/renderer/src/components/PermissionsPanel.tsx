@@ -9,7 +9,7 @@ export function statusLabel(status?: string) {
     return "denied, open System Settings";
   }
 
-  if (status === "not-determined") {
+  if (status === "not-determined" || status === "default") {
     return "not requested yet";
   }
 
@@ -21,14 +21,16 @@ export function PermissionActionRow({
   description,
   status,
   disabled = false,
-  onRequest
+  onRequest,
+  onOpenSettings
 }: {
   title: string;
   description: string;
   status?: string;
   checked: boolean;
   disabled?: boolean;
-  onRequest?: () => Promise<void>;
+  onRequest?: () => Promise<void> | void;
+  onOpenSettings?: () => void;
   onChange: (checked: boolean) => void;
 }) {
   const isGranted = status === "granted";
@@ -59,12 +61,17 @@ export function PermissionActionRow({
             {status === "denied" || status === "restricted" ? "Open Settings" : "Grant Access"}
           </button>
         ) : isGranted ? (
-          <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+          <button
+            className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 rounded-lg border border-emerald-500/20 cursor-pointer transition-all active:scale-95"
+            type="button"
+            onClick={onOpenSettings}
+            title="Click to open system settings and revoke permission"
+          >
             <span className="text-[11px] text-emerald-700 font-bold whitespace-nowrap">Granted</span>
             <div className="w-8 h-4 rounded-full bg-[#39706f] relative flex items-center justify-end p-0.5">
               <div className="w-3 h-3 rounded-full bg-white shadow-sm" />
             </div>
-          </div>
+          </button>
         ) : null}
       </div>
     </div>
@@ -88,6 +95,11 @@ export function PermissionsPanel({
         status={permissions?.accessibility}
         checked={permissions?.accessibility === "granted"}
         onRequest={requestAccessibilityPermission}
+        onOpenSettings={() => {
+          if (window.mnemonic) {
+            void window.mnemonic.openAccessibilitySettings();
+          }
+        }}
         onChange={() => undefined}
       />
       <PermissionActionRow
@@ -96,6 +108,11 @@ export function PermissionsPanel({
         status={permissions?.screen}
         checked={permissions?.screen === "granted"}
         onRequest={requestScreenPermission}
+        onOpenSettings={() => {
+          if (window.mnemonic) {
+            void window.mnemonic.openScreenRecordingSettings();
+          }
+        }}
         onChange={() => undefined}
       />
     </div>

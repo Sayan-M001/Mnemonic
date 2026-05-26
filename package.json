@@ -14,7 +14,7 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:preload": "tsc -p tsconfig.preload.json",
     "build:renderer": "vite build",
-    "package:mac": "npm run build && electron-builder --mac zip",
+    "package:mac": "npm run build && electron-builder --mac",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json"
   },
   "dependencies": {
@@ -43,7 +43,11 @@
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "scripts/**/*"
+    ],
+    "asarUnpack": [
+      "scripts/vision_ocr.swift"
     ],
     "extraResources": [
       {
@@ -53,9 +57,33 @@
     ],
     "mac": {
       "target": [
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "12.0",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSScreenCaptureDescription": "Mnemonic needs access to screen recording to capture active window previews for local OCR and recall quiz generation.",
+        "NSAppleEventsUsageDescription": "Mnemonic needs to control other applications via AppleScript to query active window titles and browser tab URLs for local context tracking.",
+        "NSUserNotificationsUsageDescription": "Mnemonic needs permission to send system notifications when a new recall quiz is ready to be taken.",
+        "NSUserNotificationAlertStyle": "alert",
+        "NSApplicationSupportsUserNotifications": true
+      }
     }
   }
 }

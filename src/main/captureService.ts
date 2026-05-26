@@ -1,4 +1,4 @@
-import { clipboard, desktopCapturer, shell, systemPreferences } from "electron";
+import { app, clipboard, desktopCapturer, shell, systemPreferences } from "electron";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -127,6 +127,10 @@ function collectClipboardEvent(recentEvents: CaptureEvent[]): CaptureEvent | nul
 }
 
 async function collectWindowSourceEvent(captureAssetsDir: string): Promise<CaptureEvent | null> {
+  if (getMediaStatus("screen") !== "granted") {
+    return null;
+  }
+
   const activeWindow = await getActiveWindowViaAppleScript();
   if (activeWindow) {
     const appName = activeWindow.appName;
@@ -376,7 +380,7 @@ async function getActiveWindowViaAppleScript(): Promise<{
       tabTitle
     };
   } catch (error) {
-    const logPath = "/Users/sayan/Library/Application Support/mnemonic-quiz-daemon/debug.log";
+    const logPath = path.join(app.getPath("userData"), "debug.log");
     try {
       await fs.appendFile(logPath, `[${new Date().toISOString()}] AppleScript Error: ${error instanceof Error ? error.stack : error}\n`);
     } catch (e) {

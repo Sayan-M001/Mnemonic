@@ -197,10 +197,35 @@ ipcMain.handle("quiz-popup:complete", async (_event, attemptId: string) => {
     slideOutAndCloseQuizWindow(quizPopupWindow);
   }
 });
-ipcMain.handle("permissions:get", () => getPermissionSnapshot());
-ipcMain.handle("permissions:request-screen", () => requestScreenPermission());
+async function checkPermissionsAndStartDaemon() {
+  const permissions = await getPermissionSnapshot();
+  if (permissions.screen === "granted" && permissions.accessibility === "granted") {
+    daemon.start();
+  }
+}
+
+ipcMain.handle("permissions:get", async () => {
+  const snapshot = await getPermissionSnapshot();
+  if (snapshot.screen === "granted" && snapshot.accessibility === "granted") {
+    daemon.start();
+  }
+  return snapshot;
+});
+ipcMain.handle("permissions:request-screen", async () => {
+  const snapshot = await requestScreenPermission();
+  if (snapshot.screen === "granted" && snapshot.accessibility === "granted") {
+    daemon.start();
+  }
+  return snapshot;
+});
 ipcMain.handle("permissions:request-microphone", () => requestMicrophonePermission());
-ipcMain.handle("permissions:request-accessibility", () => requestAccessibilityPermission());
+ipcMain.handle("permissions:request-accessibility", async () => {
+  const snapshot = await requestAccessibilityPermission();
+  if (snapshot.screen === "granted" && snapshot.accessibility === "granted") {
+    daemon.start();
+  }
+  return snapshot;
+});
 ipcMain.handle("permissions:open-screen-settings", () => openScreenRecordingSettings());
 ipcMain.handle("permissions:open-accessibility-settings", () => openAccessibilitySettings());
 
@@ -220,7 +245,7 @@ app.whenReady().then(async () => {
   }
   await createTray();
   await createDebugWindow();
-  daemon.start();
+  await checkPermissionsAndStartDaemon();
 
   try {
     const settings = await repository.getSettings();

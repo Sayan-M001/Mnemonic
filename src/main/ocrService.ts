@@ -7,7 +7,7 @@ import type { OCRTextBlock } from "../shared/types.js";
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const helperPath = path.resolve(__dirname, "../../scripts/vision_ocr.swift");
+const helperPath = path.resolve(__dirname, "../../scripts/vision_ocr.swift").replace("app.asar", "app.asar.unpacked");
 
 export type OCRResult = {
   fullText: string;

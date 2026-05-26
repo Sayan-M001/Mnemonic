@@ -101,6 +101,7 @@ export type CaptureSettings = {
   activeWindowEnabled: boolean;
   retentionDays: number;
   welcomeNotificationSent?: boolean;
+  quizIntervalMs?: number;
 };
 
 export type QuizQuestion = {

@@ -23,6 +23,22 @@ export function SettingsView({
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const currentInterval = settings?.quizIntervalMs ?? snapshot?.daemon.quizIntervalMs ?? 60 * 60 * 1000;
+
+  const presets = [
+    { value: 60 * 1000, label: "1 minute" },
+    { value: 2 * 60 * 1000, label: "2 minutes" },
+    { value: 5 * 60 * 1000, label: "5 minutes" },
+    { value: 15 * 60 * 1000, label: "15 minutes" },
+    { value: 30 * 60 * 1000, label: "30 minutes" },
+    { value: 60 * 60 * 1000, label: "1 hour" },
+    { value: 2 * 60 * 60 * 1000, label: "2 hours" },
+    { value: 4 * 60 * 60 * 1000, label: "4 hours" },
+    { value: 8 * 60 * 60 * 1000, label: "8 hours" }
+  ];
+
+  const hasCustomPreset = !presets.some((p) => p.value === currentInterval);
+
   const handleToggleClipboard = (checked: boolean) => {
     void updateSettings({ clipboardEnabled: checked });
   };
@@ -127,6 +143,34 @@ export function SettingsView({
                 />
                 <div className="w-9 h-5 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#eb7f4b]" />
               </label>
+            </div>
+
+            {/* Quiz Generation Interval */}
+            <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-4 rounded-2xl transition-all hover:border-white/10">
+              <div>
+                <strong className="text-xs font-bold text-white block">Quiz Generation Interval</strong>
+                <span className="text-[10px] text-neutral-400 font-semibold leading-normal">
+                  How often Mnemonic compiles memory quizzes from local context.
+                </span>
+              </div>
+              <select
+                value={currentInterval}
+                onChange={(e) => void updateSettings({ quizIntervalMs: Number(e.target.value) })}
+                className="bg-neutral-800 border border-white/10 rounded-lg px-2.5 py-1 text-[11px] font-bold text-white focus:outline-none focus:border-[#eb7f4b] cursor-pointer"
+              >
+                {presets.map((preset) => (
+                  <option key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </option>
+                ))}
+                {hasCustomPreset && (
+                  <option value={currentInterval}>
+                    {currentInterval >= 60000
+                      ? `${(currentInterval / 60000).toFixed(0)} minutes (Custom)`
+                      : `${(currentInterval / 1000).toFixed(0)} seconds (Custom)`}
+                  </option>
+                )}
+              </select>
             </div>
           </div>
         </section>
@@ -234,7 +278,11 @@ export function SettingsView({
             <div className="flex justify-between">
               <span>Quiz generation span:</span>
               <span className="text-neutral-200">
-                {snapshot ? `${(snapshot.daemon.quizIntervalMs / 60000).toFixed(0)} minutes` : "--"}
+                {snapshot
+                  ? snapshot.daemon.quizIntervalMs >= 60000
+                    ? `${(snapshot.daemon.quizIntervalMs / 60000).toFixed(0)} minute${snapshot.daemon.quizIntervalMs === 60000 ? "" : "s"}`
+                    : `${(snapshot.daemon.quizIntervalMs / 1000).toFixed(0)} seconds`
+                  : "--"}
               </span>
             </div>
           </div>

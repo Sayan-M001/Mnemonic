@@ -23,8 +23,8 @@ export class QuizDaemon {
   private lastRunAt: string | null = null;
   private nextRunAt: string | null = null;
   private readonly intervalMs: number;
-  private readonly quizIntervalMs: number;
-  private readonly minEventsForQuiz: number;
+  private quizIntervalMs: number;
+  private minEventsForQuiz: number;
   private lastQuizRunAt: string | null = null;
   private nextQuizRunAt: string | null = null;
   private lastNotifiedSourceSignature: string | null = null;
@@ -35,11 +35,13 @@ export class QuizDaemon {
     this.intervalMs = options.intervalMs ?? 30_000;
     this.quizIntervalMs = options.quizIntervalMs ?? 60 * 60 * 1000;
 
-    // Calculate expected capture events in a single quiz interval
     const expectedEvents = Math.floor(this.quizIntervalMs / this.intervalMs);
+    this.minEventsForQuiz = Math.max(1, Math.min(expectedEvents, Math.max(3, Math.floor(expectedEvents * 0.10))));
+  }
 
-    // Require active events for at least 10% of the quiz interval,
-    // with a target minimum of 3 events (for 3 questions), but capped at the max possible expected events.
+  private updateQuizInterval(quizIntervalMs: number) {
+    this.quizIntervalMs = quizIntervalMs;
+    const expectedEvents = Math.floor(this.quizIntervalMs / this.intervalMs);
     this.minEventsForQuiz = Math.max(1, Math.min(expectedEvents, Math.max(3, Math.floor(expectedEvents * 0.10))));
   }
 
@@ -49,11 +51,24 @@ export class QuizDaemon {
     }
 
     this.started = true;
-    this.scheduleNextRun();
-    this.interval = setTimeout(() => {
-      this.interval = null;
-      void this.runOnce();
-    }, this.intervalMs);
+    
+    this.options.repository.getSettings().then((settings) => {
+      if (settings.quizIntervalMs) {
+        this.updateQuizInterval(settings.quizIntervalMs);
+      }
+      this.scheduleNextRun();
+      this.interval = setTimeout(() => {
+        this.interval = null;
+        void this.runOnce();
+      }, this.intervalMs);
+    }).catch((err) => {
+      console.error("Failed to load settings at daemon start:", err);
+      this.scheduleNextRun();
+      this.interval = setTimeout(() => {
+        this.interval = null;
+        void this.runOnce();
+      }, this.intervalMs);
+    });
   }
 
   stop() {
@@ -93,6 +108,9 @@ export class QuizDaemon {
 
   async updateSettings(settings: CaptureSettings) {
     await this.options.repository.saveSettings(settings);
+    if (settings.quizIntervalMs) {
+      this.updateQuizInterval(settings.quizIntervalMs);
+    }
     await this.broadcastSnapshot();
   }
 
@@ -115,6 +133,9 @@ export class QuizDaemon {
       this.lastRunAt = new Date().toISOString();
 
       const settings = await this.options.repository.getSettings();
+      if (settings.quizIntervalMs) {
+        this.updateQuizInterval(settings.quizIntervalMs);
+      }
       const recentEvents = await this.options.repository.listRecentEvents(20);
       const capturedEvents = await collectEnabledCaptureEvents(settings, recentEvents, this.options.captureAssetsDir);
 
